@@ -26,8 +26,8 @@ class Logger {
 
   constructor() {
     this.isProduction = process.env.NODE_ENV === 'production'
-    // En desarrollo mostramos más logs, en producción solo WARN y ERROR
-    this.currentLevel = this.isProduction ? LogLevel.WARN : LogLevel.DEBUG
+    // En desarrollo mostramos más logs, en producción también mostramos INFO para debugging
+    this.currentLevel = this.isProduction ? LogLevel.INFO : LogLevel.DEBUG
   }
 
   private formatLog(level: LogLevel, message: string, data?: any, context?: Partial<LogContext>): LogContext {
@@ -48,18 +48,24 @@ class Logger {
   private logToConsole(level: LogLevel, message: string, data?: any, context?: Partial<LogContext>) {
     const logContext = this.formatLog(level, message, data, context)
 
-    // Mantener los console.log existentes para desarrollo
-    if (level === LogLevel.DEBUG || level === LogLevel.INFO) {
-      console.log(message, data ? data : '')
-    } else if (level === LogLevel.WARN) {
-      console.warn(message, data ? data : '')
-    } else if (level === LogLevel.ERROR) {
-      console.error(message, data ? data : '')
-    }
-
-    // Log estructurado para Vercel (JSON)
+    // En producción, usar console.log para todos los niveles para máxima visibilidad en Vercel
     if (this.isProduction) {
+      if (data !== undefined && data !== null) {
+        console.log(`[${level}] ${message}`, data)
+      } else {
+        console.log(`[${level}] ${message}`)
+      }
+      // También log estructurado para mejor parsing
       console.log(JSON.stringify(logContext))
+    } else {
+      // En desarrollo mantener los console methods normales
+      if (level === LogLevel.DEBUG || level === LogLevel.INFO) {
+        console.log(message, data ? data : '')
+      } else if (level === LogLevel.WARN) {
+        console.warn(message, data ? data : '')
+      } else if (level === LogLevel.ERROR) {
+        console.error(message, data ? data : '')
+      }
     }
   }
 
@@ -191,6 +197,42 @@ class Logger {
   leadStatusFound(leadId: string, statusName: string | null, statusId: string) {
     this.info(`Lead ${leadId} tiene status actual: ${statusName} (ID: ${statusId})`, undefined, { leadId, statusName, statusId })
   }
+
+  // Logs específicos para peticiones HTTP
+  outgoingHttpRequest(method: string, url: string, headers?: any, body?: any) {
+    this.info(`📤 PETICIÓN SALIENTE: ${method} ${url}`)
+    if (headers) {
+      this.debug("Headers enviados", headers)
+    }
+    if (body) {
+      this.debug("Body enviado", body)
+    }
+  }
+
+  incomingHttpResponse(status: number, statusText: string, data?: any, responseTime?: number) {
+    const timeInfo = responseTime ? ` (${responseTime}ms)` : ''
+    if (status >= 200 && status < 300) {
+      this.info(`📥 RESPUESTA: ${status} ${statusText}${timeInfo}`)
+    } else {
+      this.warn(`📥 RESPUESTA ERROR: ${status} ${statusText}${timeInfo}`)
+    }
+    if (data) {
+      this.debug("Datos de respuesta", data)
+    }
+  }
+
+  httpError(operation: string, error: any, url?: string) {
+    this.error(`❌ ERROR HTTP en ${operation}${url ? ` (${url})` : ''}`, error)
+  }
+
+  // Logs para AI processing detallado
+  aiPromptSent(prompt: string, systemMessage: string) {
+    this.debug("🤖 PROMPT ENVIADO A AI", { prompt, systemMessage })
+  }
+
+  aiResponseReceived(response: any, confidence: number) {
+    this.info(`🤖 RESPUESTA DE AI recibida (confianza: ${(confidence * 100).toFixed(1)}%)`, response)
+  }
 }
 
 // Instancia singleton del logger
@@ -214,3 +256,12 @@ export const logKommoApiError = (operation: string, error: any, leadId?: string)
 export const logLeadInfoSuccess = (result: any) => logger.leadInfoSuccess(result)
 export const logLeadStatusNotFound = (leadId: string) => logger.leadStatusNotFound(leadId)
 export const logLeadStatusFound = (leadId: string, statusName: string | null, statusId: string) => logger.leadStatusFound(leadId, statusName, statusId)
+
+// Nuevas funciones de logging para HTTP
+export const logOutgoingHttpRequest = (method: string, url: string, headers?: any, body?: any) => logger.outgoingHttpRequest(method, url, headers, body)
+export const logIncomingHttpResponse = (status: number, statusText: string, data?: any, responseTime?: number) => logger.incomingHttpResponse(status, statusText, data, responseTime)
+export const logHttpError = (operation: string, error: any, url?: string) => logger.httpError(operation, url, error)
+
+// Nuevas funciones de logging para AI
+export const logAiPromptSent = (prompt: string, systemMessage: string) => logger.aiPromptSent(prompt, systemMessage)
+export const logAiResponseReceived = (response: any, confidence: number) => logger.aiResponseReceived(response, confidence)

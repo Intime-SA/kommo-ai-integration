@@ -5,7 +5,10 @@ import {
   logLeadInfoSuccess,
   logKommoApiError,
   logLeadStatusNotFound,
-  logLeadStatusFound
+  logLeadStatusFound,
+  logOutgoingHttpRequest,
+  logIncomingHttpResponse,
+  logHttpError
 } from "./logger"
 
 export interface KommoApiConfig {
@@ -15,47 +18,78 @@ export interface KommoApiConfig {
 const ACCESS_TOKEN = process.env.KOMMO_ACCESS_TOKEN
 
 export async function updateLeadStatus(leadId: string, newStatusId: string, config: KommoApiConfig): Promise<boolean> {
+  const startTime = Date.now()
+  const url = `https://${config.subdomain}.kommo.com/api/v4/leads/${leadId}`
+  const requestBody = { status_id: parseInt(newStatusId) }
+
   try {
-    const response = await fetch(`https://${config.subdomain}.kommo.com/api/v4/leads/${leadId}`, {
+    // Log de petición saliente
+    logOutgoingHttpRequest("PATCH", url, {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    }, requestBody)
+
+    const response = await fetch(url, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${ACCESS_TOKEN}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        status_id: parseInt(newStatusId),
-      }),
+      body: JSON.stringify(requestBody),
     })
 
+    const responseTime = Date.now() - startTime
+    const responseText = await response.text()
+
+    // Log de respuesta
+    logIncomingHttpResponse(response.status, response.statusText, responseText, responseTime)
+
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Failed to update lead status: ${response.status} ${response.statusText} - ${errorText}`)
+      throw new Error(`Failed to update lead status: ${response.status} ${response.statusText} - ${responseText}`)
     }
 
-    const result = await response.json()
+    const result = JSON.parse(responseText)
     logLeadInfoSuccess(result)
     return true
   } catch (error) {
+    const responseTime = Date.now() - startTime
+    logHttpError("updateLeadStatus", error, url)
     logKommoApiError("updateLeadStatus", error)
     return false
   }
 }
 
 export async function getLeadInfo(leadId: string, config: KommoApiConfig): Promise<any> {
+  const startTime = Date.now()
+  const url = `https://${config.subdomain}.kommo.com/api/v4/leads/${leadId}`
+
   try {
-    const response = await fetch(`https://${config.subdomain}.kommo.com/api/v4/leads/${leadId}`, {
+    // Log de petición saliente
+    logOutgoingHttpRequest("GET", url, {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+    })
+
+    const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${ACCESS_TOKEN}`,
       },
     })
 
+    const responseTime = Date.now() - startTime
+    const responseText = await response.text()
+
+    // Log de respuesta
+    logIncomingHttpResponse(response.status, response.statusText, responseText, responseTime)
+
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Failed to get lead info: ${response.status} ${response.statusText} - ${errorText}`)
+      throw new Error(`Failed to get lead info: ${response.status} ${response.statusText} - ${responseText}`)
     }
 
-    return await response.json()
+    const result = JSON.parse(responseText)
+    return result
   } catch (error) {
+    const responseTime = Date.now() - startTime
+    logHttpError("getLeadInfo", error, url)
     logKommoApiError("getLeadInfo", error)
     return null
   }

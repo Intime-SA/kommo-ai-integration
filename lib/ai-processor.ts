@@ -2,7 +2,7 @@ import { generateObject } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 import type { LeadStatus, AIDecision } from "@/types/kommo"
-import { logAiProcessingError } from "./logger"
+import { logAiProcessingError, logAiPromptSent, logAiResponseReceived } from "./logger"
 
 const aiDecisionSchema = z.object({
   currentStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "Cargo", "NoCargo", "NoAtender"]),
@@ -17,13 +17,9 @@ export async function processMessageWithAI(
   currentStatus: LeadStatus,
   talkId: string,
 ): Promise<AIDecision> {
-  try {
-    const { object } = await generateObject({
-      model: openai("gpt-4o"),
-      schema: aiDecisionSchema,
-      system: `Eres un asistente de IA especializado en clasificar mensajes de clientes potenciales en un CRM (Kommo).
+  const systemMessage = `Eres un asistente de IA especializado en clasificar mensajes de clientes potenciales en un CRM (Kommo).
 
-Tu objetivo es analizar mensajes ENTRANTES de clientes y decidir si corresponde cambiar el status del Lead. 
+Tu objetivo es analizar mensajes ENTRANTES de clientes y decidir si corresponde cambiar el status del Lead.
 El status refleja el punto en el flujo comercial/operativo en el que se encuentra el cliente.
 
 📌 ESTADOS DISPONIBLES:
@@ -51,8 +47,9 @@ El status refleja el punto en el flujo comercial/operativo en el que se encuentr
 - Cliente dice: "Hola" y ya estaba en "PidioCbuAlias" → mantener status
 - Cliente dice: "No voy a cargar nada, chau" → newStatus = "NoCargo"
 - Cliente insulta o hace chistes sin sentido → newStatus = "NoAtender"
-`,
-      prompt: `
+`
+
+  const prompt = `
 Analiza este mensaje de cliente:
 
 Mensaje: "${messageText}"
@@ -64,8 +61,21 @@ Determina:
 2. A qué nuevo status (si aplica)
 3. Tu razonamiento
 4. Tu nivel de confianza (0-1)
-      `,
+      `
+
+  try {
+    // Log del prompt enviado a la AI
+    logAiPromptSent(prompt, systemMessage)
+
+    const { object } = await generateObject({
+      model: openai("gpt-4o"),
+      schema: aiDecisionSchema,
+      system: systemMessage,
+      prompt: prompt,
     })
+
+    // Log de la respuesta de la AI
+    logAiResponseReceived(object, object.confidence)
 
     return object
   } catch (error) {
