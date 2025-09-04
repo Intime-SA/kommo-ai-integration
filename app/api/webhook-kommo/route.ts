@@ -2,12 +2,26 @@ import { type NextRequest, NextResponse } from "next/server"
 import type { KommoWebhookData, ProcessedMessage } from "@/types/kommo"
 import { processMessageWithAI } from "@/lib/ai-processor"
 import { updateLeadStatusByName, getCurrentLeadStatus, type KommoApiConfig } from "@/lib/kommo-api"
+import {
+  logWebhookReceived,
+  logWebhookParsed,
+  logMessageProcessing,
+  logLeadStatusQuery,
+  logLeadStatusRetrieved,
+  logAiDecision,
+  logStatusChange,
+  logLeadUpdateSuccess,
+  logLeadUpdateError,
+  logConfigWarning,
+  logMessageSkipped,
+  logWebhookError
+} from "@/lib/logger"
 
 export async function POST(request: NextRequest) {
   try {
     // Parse the webhook data
     const body = await request.text()
-    console.log("🔔 Webhook recibido de Kommo (datos crudos):", body)
+    logWebhookReceived(body)
 
     // Parse form data (Kommo sends form-encoded data)
     const formData = new URLSearchParams(body)
@@ -64,46 +78,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Mostrar datos parseados de manera legible
-    console.log("📋 Datos del webhook parseados:")
-    console.log("- Cuenta:", webhookData.account ? {
-      subdomain: webhookData.account.subdomain,
-      id: webhookData.account.id,
-      links: webhookData.account._links
-    } : "No disponible")
-
-    if (webhookData.message?.add?.[0]) {
-      const msg = webhookData.message.add[0]
-      console.log("- Mensaje:", {
-        id: msg.id,
-        chat_id: msg.chat_id,
-        talk_id: msg.talk_id,
-        contact_id: msg.contact_id,
-        text: msg.text,
-        created_at: new Date(Number.parseInt(msg.created_at) * 1000).toLocaleString('es-ES'),
-        element_type: msg.element_type,
-        entity_type: msg.entity_type,
-        element_id: msg.element_id,
-        entity_id: msg.entity_id,
-        type: msg.type,
-        author: msg.author,
-
-        //origin: msg.origin
-      })
-    }
-
-    if (webhookData.talk?.add?.[0]) {
-      const talk = webhookData.talk.add[0]
-      console.log("- Conversación:", {
-        talk_id: talk.talk_id,
-        contact_id: talk.contact_id,
-        chat_id: talk.chat_id,
-        entity_id: talk.entity_id,
-        entity_type: talk.entity_type,
-        origin: talk.origin,
-        is_in_work: talk.is_in_work,
-        is_read: talk.is_read
-      })
-    }
+    logWebhookParsed(
+      webhookData.account,
+      webhookData.message?.add?.[0],
+      webhookData.talk?.add?.[0]
+    )
 
     // Process only incoming messages
     if (webhookData.message?.add?.[0]?.type === "incoming") {
@@ -111,7 +90,7 @@ export async function POST(request: NextRequest) {
 
       // Validar que el mensaje tenga texto antes de procesar
       if (!message.text || message.text.trim() === "") {
-        console.log("⚠️ Mensaje sin texto - ignorando procesamiento")
+        logMessageSkipped("Mensaje sin texto - ignorando procesamiento")
         return NextResponse.json({
           success: true,
           processed: false,
@@ -120,7 +99,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (message.talk_id && message.entity_id) {
-        console.log(`📨 Procesando mensaje: "${message.text}" de ${message.author?.name}`)
+        logMessageProcessing(message.text, message.author?.name || "Cliente", message.talk_id, message.entity_id)
 
         // Obtener la configuración de Kommo
         const config: KommoApiConfig = {
@@ -128,7 +107,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (!config.subdomain) {
-          console.warn("⚠️ Configuración de Kommo incompleta - no se puede procesar el lead")
+          logConfigWarning("Configuración de Kommo incompleta - no se puede procesar el lead")
           return NextResponse.json({
             success: false,
             processed: false,
@@ -137,11 +116,11 @@ export async function POST(request: NextRequest) {
         }
 
         // Obtener el status actual del lead desde Kommo
-        console.log(`🔍 Consultando status actual del lead ${message.entity_id}...`)
+        logLeadStatusQuery(message.entity_id)
         const currentStatus = await getCurrentLeadStatus(message.entity_id, config)
 
         if (!currentStatus) {
-          console.warn(`⚠️ No se pudo obtener el status actual del lead ${message.entity_id}`)
+          logConfigWarning(`No se pudo obtener el status actual del lead ${message.entity_id}`)
           return NextResponse.json({
             success: false,
             processed: false,
@@ -149,7 +128,7 @@ export async function POST(request: NextRequest) {
           })
         }
 
-        console.log(`📊 Status actual del lead: "${currentStatus}"`)
+        logLeadStatusRetrieved(message.entity_id, currentStatus, "")
 
         // Process with AI usando el status real
         const aiDecision = await processMessageWithAI(message.text, currentStatus, message.talk_id)
@@ -164,7 +143,7 @@ export async function POST(request: NextRequest) {
           aiDecision,
         }
 
-        console.log("🤖 Decisión de IA:", aiDecision)
+        logAiDecision(aiDecision, message.talk_id, message.entity_id)
 
         // Here you would typically:
         // 1. Save the processed message to your database
@@ -172,8 +151,7 @@ export async function POST(request: NextRequest) {
         // 3. Log the activity for monitoring
 
         if (aiDecision.shouldChange) {
-          console.log(`🔄 Cambiando status de "${aiDecision.currentStatus}" a "${aiDecision.newStatus}"`)
-          console.log(`📝 Razón: ${aiDecision.reasoning}`)
+          logStatusChange(aiDecision.currentStatus, aiDecision.newStatus, aiDecision.reasoning, message.talk_id, message.entity_id)
 
           try {
             const updateSuccess = await updateLeadStatusByName(
@@ -183,12 +161,12 @@ export async function POST(request: NextRequest) {
             )
 
             if (updateSuccess) {
-              console.log(`✅ Lead ${message.entity_id} actualizado exitosamente a "${aiDecision.newStatus}"`)
+              logLeadUpdateSuccess(message.entity_id, aiDecision.newStatus)
             } else {
-              console.error(`❌ Error actualizando lead ${message.entity_id} a "${aiDecision.newStatus}"`)
+              logLeadUpdateError(message.entity_id, aiDecision.newStatus)
             }
           } catch (updateError) {
-            console.error("❌ Error en la actualización del lead:", updateError)
+            logLeadUpdateError(message.entity_id, aiDecision.newStatus, updateError)
           }
         }
 
@@ -209,7 +187,7 @@ export async function POST(request: NextRequest) {
       message: "Webhook recibido pero no procesado (no es mensaje entrante)",
     })
   } catch (error) {
-    console.error("❌ Error procesando webhook:", error)
+    logWebhookError(error)
 
     return NextResponse.json(
       {

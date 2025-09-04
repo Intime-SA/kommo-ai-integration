@@ -2,6 +2,7 @@ import { generateObject } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 import type { LeadStatus, AIDecision } from "@/types/kommo"
+import { logAiProcessingError } from "./logger"
 
 const aiDecisionSchema = z.object({
   currentStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "Cargo", "NoCargo", "NoAtender"]),
@@ -68,7 +69,7 @@ Determina:
 
     return object
   } catch (error) {
-    console.error("Error processing message with AI:", error)
+    logAiProcessingError(error)
 
     // Fallback decision
     return {

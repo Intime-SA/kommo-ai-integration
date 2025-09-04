@@ -1,6 +1,13 @@
 // Utility functions for interacting with Kommo API
 // You'll need to implement these based on your Kommo API credentials
 
+import {
+  logLeadInfoSuccess,
+  logKommoApiError,
+  logLeadStatusNotFound,
+  logLeadStatusFound
+} from "./logger"
+
 export interface KommoApiConfig {
   subdomain: string
 }
@@ -26,10 +33,10 @@ export async function updateLeadStatus(leadId: string, newStatusId: string, conf
     }
 
     const result = await response.json()
-    console.log("Lead status updated successfully:", result)
+    logLeadInfoSuccess(result)
     return true
   } catch (error) {
-    console.error("Error updating lead status in Kommo:", error)
+    logKommoApiError("updateLeadStatus", error)
     return false
   }
 }
@@ -49,7 +56,7 @@ export async function getLeadInfo(leadId: string, config: KommoApiConfig): Promi
 
     return await response.json()
   } catch (error) {
-    console.error("Error getting lead info from Kommo:", error)
+    logKommoApiError("getLeadInfo", error)
     return null
   }
 }
@@ -104,16 +111,16 @@ export async function getCurrentLeadStatus(leadId: string, config: KommoApiConfi
     const leadInfo = await getLeadInfo(leadId, config)
 
     if (!leadInfo || !leadInfo.status_id) {
-      console.warn(`No se pudo obtener información del lead ${leadId}`)
+      logLeadStatusNotFound(leadId)
       return null
     }
 
     const statusName = getStatusName(leadInfo.status_id.toString())
-    console.log(`Lead ${leadId} tiene status actual: ${statusName} (ID: ${leadInfo.status_id})`)
+    logLeadStatusFound(leadId, statusName, leadInfo.status_id.toString())
 
     return statusName
   } catch (error) {
-    console.error(`Error obteniendo status del lead ${leadId}:`, error)
+    logKommoApiError("getCurrentLeadStatus", error, leadId)
     return null
   }
 }
