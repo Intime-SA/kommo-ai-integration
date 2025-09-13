@@ -188,12 +188,12 @@ Para producción en Vercel, asegúrate de:
 1. **Configurar variables de entorno en Vercel**:
    - Ve a tu proyecto en Vercel Dashboard
    - Settings → Environment Variables
-   - Agrega: `CORS_ORIGIN=https://kommo-ai-dashboard.vercel.app/`
+   - Agrega: `CORS_ORIGIN=https://kommo-ai-dashboard.vercel.app`
 
 2. **Verificar orígenes permitidos en middleware.ts**:
 ```typescript
 const allowedOrigins = [
-  'https://kommo-ai-dashboard.vercel.app/', // Con barra
+  'https://kommo-ai-dashboard.vercel.app', // Con barra
   'https://kommo-ai-dashboard.vercel.app',  // Sin barra
   // ... otros orígenes
 ];

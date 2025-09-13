@@ -17,7 +17,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Access-Control-Allow-Origin',
-            value: process.env.CORS_ORIGIN || 'https://kommo-ai-dashboard.vercel.app/',
+            value: process.env.CORS_ORIGIN || 'https://kommo-ai-dashboard.vercel.app',
           },
           {
             key: 'Access-Control-Allow-Methods',
