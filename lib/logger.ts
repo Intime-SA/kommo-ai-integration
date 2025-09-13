@@ -98,7 +98,7 @@ class Logger {
     this.info("🔔 Webhook recibido de Kommo (datos crudos)", body)
   }
 
-  webhookParsed(account: any, message?: any, talk?: any) {
+  webhookParsed(account: any, message?: any, talkAdd?: any, leads?: any, talkUpdate?: any, unsortedAdd?: any, leadsDelete?: any, unsortedDelete?: any) {
     this.info("📋 Datos del webhook parseados")
     this.info("- Cuenta", account ? {
       subdomain: account.subdomain,
@@ -123,16 +123,80 @@ class Logger {
       })
     }
 
-    if (talk) {
-      this.info("- Conversación", {
-        talk_id: talk.talk_id,
-        contact_id: talk.contact_id,
-        chat_id: talk.chat_id,
-        entity_id: talk.entity_id,
-        entity_type: talk.entity_type,
-        origin: talk.origin,
-        is_in_work: talk.is_in_work,
-        is_read: talk.is_read
+    if (talkAdd) {
+      this.info("- Nueva conversación (add)", {
+        talk_id: talkAdd.talk_id,
+        contact_id: talkAdd.contact_id,
+        chat_id: talkAdd.chat_id,
+        entity_id: talkAdd.entity_id,
+        entity_type: talkAdd.entity_type,
+        origin: talkAdd.origin,
+        is_in_work: talkAdd.is_in_work,
+        is_read: talkAdd.is_read,
+        created_at: new Date(Number.parseInt(talkAdd.created_at) * 1000).toLocaleString('es-ES')
+      })
+    }
+
+    if (talkUpdate) {
+      this.info("- Actualización de conversación (update)", {
+        talk_id: talkUpdate.talk_id,
+        contact_id: talkUpdate.contact_id,
+        chat_id: talkUpdate.chat_id,
+        entity_id: talkUpdate.entity_id,
+        entity_type: talkUpdate.entity_type,
+        origin: talkUpdate.origin,
+        is_in_work: talkUpdate.is_in_work,
+        is_read: talkUpdate.is_read,
+        updated_at: new Date(Number.parseInt(talkUpdate.updated_at) * 1000).toLocaleString('es-ES'),
+        created_at: new Date(Number.parseInt(talkUpdate.created_at) * 1000).toLocaleString('es-ES')
+      })
+    }
+
+    if (unsortedAdd) {
+      this.info("- Elemento no ordenado agregado (unsorted add)", {
+        uid: unsortedAdd.uid,
+        source: unsortedAdd.source,
+        source_uid: unsortedAdd.source_uid,
+        category: unsortedAdd.category,
+        lead_id: unsortedAdd.lead_id,
+        contact_id: unsortedAdd.data?.contacts?.[0]?.id,
+        pipeline_id: unsortedAdd.pipeline_id,
+        created_at: new Date(Number.parseInt(unsortedAdd.created_at) * 1000).toLocaleString('es-ES'),
+        client: unsortedAdd.source_data?.client,
+        message_text: unsortedAdd.source_data?.data?.[0]?.text,
+        source_name: unsortedAdd.source_data?.source_name
+      })
+    }
+
+    if (leadsDelete) {
+      this.info("- Eliminación de lead", {
+        lead_id: leadsDelete.id,
+        status_id: leadsDelete.status_id,
+        pipeline_id: leadsDelete.pipeline_id
+      })
+    }
+
+    if (unsortedDelete) {
+      this.info("- Eliminación de elemento no ordenado (unsorted delete)", {
+        action: unsortedDelete.action,
+        uid: unsortedDelete.uid,
+        category: unsortedDelete.category,
+        created_at: new Date(Number.parseInt(unsortedDelete.created_at) * 1000).toLocaleString('es-ES'),
+        modified_user_id: unsortedDelete.modified_user_id,
+        decline_result_leads: unsortedDelete.decline_result?.leads
+      })
+    }
+
+    if (leads?.status?.[0]) {
+      this.info("- Cambio de estado del lead", {
+        lead_id: leads.status[0].id,
+        name: leads.status[0].name,
+        from_status_id: leads.status[0].old_status_id,
+        to_status_id: leads.status[0].status_id,
+        responsible_user_id: leads.status[0].responsible_user_id,
+        modified_user_id: leads.status[0].modified_user_id,
+        last_modified: new Date(Number.parseInt(leads.status[0].last_modified) * 1000).toLocaleString('es-ES'),
+        pipeline_id: leads.status[0].pipeline_id
       })
     }
   }
@@ -198,6 +262,47 @@ class Logger {
     this.info(`Lead ${leadId} tiene status actual: ${statusName} (ID: ${statusId})`, undefined, { leadId, statusName, statusId })
   }
 
+  leadStatusChange(leadId: string, oldStatusId: string, newStatusId: string, userId: string) {
+    this.info(`🔄 Cambio manual de status del lead ${leadId}`, {
+      from: `Status ID ${oldStatusId}`,
+      to: `Status ID ${newStatusId}`,
+      by: `Usuario ${userId}`
+    }, { leadId, oldStatusId, newStatusId, userId })
+  }
+
+  talkUpdate(talkId: string, contactId: string, entityId: string, isInWork: string, isRead: string) {
+    this.info(`💬 Actualización de conversación ${talkId}`, {
+      contact_id: contactId,
+      entity_id: entityId,
+      is_in_work: isInWork,
+      is_read: isRead
+    }, { talkId, contactId, entityId })
+  }
+
+  unsortedAdd(uid: string, source: string, category: string, leadId?: string, contactId?: string) {
+    this.info(`📥 Nuevo elemento no ordenado ${uid}`, {
+      source: source,
+      category: category,
+      lead_id: leadId,
+      contact_id: contactId
+    }, { uid, source, category, leadId, contactId })
+  }
+
+  leadsDelete(leadId: string, statusId: string, pipelineId: string) {
+    this.info(`🗑️ Lead eliminado ${leadId}`, {
+      status_id: statusId,
+      pipeline_id: pipelineId
+    }, { leadId, statusId, pipelineId })
+  }
+
+  unsortedDelete(uid: string, action: string, category: string, modifiedUserId: string) {
+    this.info(`🗑️ Elemento no ordenado eliminado ${uid}`, {
+      action: action,
+      category: category,
+      modified_user_id: modifiedUserId
+    }, { uid, action, category, modifiedUserId })
+  }
+
   // Logs específicos para peticiones HTTP
   outgoingHttpRequest(method: string, url: string, headers?: any, body?: any) {
     this.info(`📤 PETICIÓN SALIENTE: ${method} ${url}`)
@@ -240,7 +345,7 @@ export const logger = new Logger()
 
 // Exportar funciones de conveniencia para mantener compatibilidad
 export const logWebhookReceived = (body: string) => logger.webhookReceived(body)
-export const logWebhookParsed = (account: any, message?: any, talk?: any) => logger.webhookParsed(account, message, talk)
+export const logWebhookParsed = (account: any, message?: any, talkAdd?: any, leads?: any, talkUpdate?: any, unsortedAdd?: any, leadsDelete?: any, unsortedDelete?: any) => logger.webhookParsed(account, message, talkAdd, leads, talkUpdate, unsortedAdd, leadsDelete, unsortedDelete)
 export const logMessageProcessing = (text: string, author: string, talkId?: string, leadId?: string) => logger.messageProcessing(text, author, talkId, leadId)
 export const logLeadStatusQuery = (leadId: string) => logger.leadStatusQuery(leadId)
 export const logLeadStatusRetrieved = (leadId: string, status: string, statusId: string) => logger.leadStatusRetrieved(leadId, status, statusId)
@@ -256,6 +361,11 @@ export const logKommoApiError = (operation: string, error: any, leadId?: string)
 export const logLeadInfoSuccess = (result: any) => logger.leadInfoSuccess(result)
 export const logLeadStatusNotFound = (leadId: string) => logger.leadStatusNotFound(leadId)
 export const logLeadStatusFound = (leadId: string, statusName: string | null, statusId: string) => logger.leadStatusFound(leadId, statusName, statusId)
+export const logLeadStatusChange = (leadId: string, oldStatusId: string, newStatusId: string, userId: string) => logger.leadStatusChange(leadId, oldStatusId, newStatusId, userId)
+export const logTalkUpdate = (talkId: string, contactId: string, entityId: string, isInWork: string, isRead: string) => logger.talkUpdate(talkId, contactId, entityId, isInWork, isRead)
+export const logUnsortedAdd = (uid: string, source: string, category: string, leadId?: string, contactId?: string) => logger.unsortedAdd(uid, source, category, leadId, contactId)
+export const logLeadsDelete = (leadId: string, statusId: string, pipelineId: string) => logger.leadsDelete(leadId, statusId, pipelineId)
+export const logUnsortedDelete = (uid: string, action: string, category: string, modifiedUserId: string) => logger.unsortedDelete(uid, action, category, modifiedUserId)
 
 // Nuevas funciones de logging para HTTP
 export const logOutgoingHttpRequest = (method: string, url: string, headers?: any, body?: any) => logger.outgoingHttpRequest(method, url, headers, body)

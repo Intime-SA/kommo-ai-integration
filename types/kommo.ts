@@ -7,7 +7,7 @@ export interface KommoWebhookData {
     }
   }
   talk?: {
-    add: Array<{
+    add?: Array<{
       talk_id: string
       created_at: string
       updated_at: string
@@ -19,6 +19,73 @@ export interface KommoWebhookData {
       is_in_work: string
       is_read: string
       origin: string
+    }>
+    update?: Array<{
+      talk_id: string
+      created_at: string
+      updated_at: string
+      rate: string
+      contact_id: string
+      chat_id: string
+      entity_id: string
+      entity_type: string
+      is_in_work: string
+      is_read: string
+      origin: string
+    }>
+  }
+  unsorted?: {
+    add?: Array<{
+      uid: string
+      source: string
+      source_uid: string
+      category: string
+      source_data: {
+        from: string
+        name: string
+        to: string
+        date: string
+        service: string
+        site: string
+        client: {
+          name: string
+          id: string
+        }
+        origin: {
+          provider: string
+          chat_id: string
+        }
+        data: Array<{
+          id: string
+          manager: string
+          date: string
+          text: string
+        }>
+        source_uid: string
+        source: string
+        source_name: string
+      }
+      date_create: string
+      data: {
+        contacts: Array<{
+          id: string
+        }>
+      }
+      pipeline_id: string
+      account_id: string
+      source_id: string
+      lead_id: string
+      created_at: string
+    }>
+    delete?: Array<{
+      action: string
+      decline_result: {
+        leads: Array<string>
+      }
+      uid: string
+      category: string
+      created_at: string
+      modified_user_id: string
     }>
   }
   message?: {
@@ -41,9 +108,31 @@ export interface KommoWebhookData {
       }
     }>
   }
+  leads?: {
+    status?: Array<{
+      id: string
+      name: string
+      status_id: string
+      old_status_id: string
+      responsible_user_id: string
+      last_modified: string
+      modified_user_id: string
+      created_user_id: string
+      date_create: string
+      pipeline_id: string
+      account_id: string
+      created_at: string
+      updated_at: string
+    }>
+    delete?: Array<{
+      id: string
+      status_id: string
+      pipeline_id: string
+    }>
+  }
 }
 
-export type LeadStatus = "Revisar" | "PidioUsuario" | "PidioCbuAlias" | "Cargo" | "NoCargo" | "NoAtender" | "Seguimiento" | "Ganado" | "Perdido"
+export type LeadStatus = "Revisar" | "PidioUsuario" | "PidioCbuAlias" | "Cargo" | "NoCargo" | "NoAtender" | "Seguimiento" | "Ganado" | "Perdido" | "sin-status"
 
 export interface AIDecision {
   currentStatus: LeadStatus

@@ -5,8 +5,8 @@ import type { LeadStatus, AIDecision } from "@/types/kommo"
 import { logAiProcessingError, logAiPromptSent, logAiResponseReceived } from "./logger"
 
 const aiDecisionSchema = z.object({
-  currentStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "Cargo", "NoCargo", "NoAtender"]),
-  newStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "Cargo", "NoCargo", "NoAtender"]),
+  currentStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "Cargo", "NoCargo", "NoAtender", "sin-status"]),
+  newStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "Cargo", "NoCargo", "NoAtender", "sin-status"]),
   shouldChange: z.boolean(),
   reasoning: z.string(),
   confidence: z.number().min(0).max(1),
@@ -23,6 +23,7 @@ Tu objetivo es analizar mensajes ENTRANTES de clientes y decidir si corresponde 
 El status refleja el punto en el flujo comercial/operativo en el que se encuentra el cliente.
 
 📌 ESTADOS DISPONIBLES:
+- "sin-status": No se pudo obtener el status actual del lead, enviar a "Revisar".
 - "Revisar": Cliente con dudas, preguntas o solicitudes que no están contempladas en los botones del menú principal. Aquí requiere intervención manual de un operador/agente humano.
 - "PidioUsuario": Cliente potencial solicita un usuario/credencial para ingresar al sistema. La automatización se lo entrega y luego pasa a seguimiento.
 - "PidioCbuAlias": Cliente solicita información bancaria (CBU o alias) para hacer una transferencia. Luego espera acción del operador para verificar si el cliente avanza (envío de comprobante, carga, etc.).
