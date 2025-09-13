@@ -220,6 +220,76 @@ Crea un registro de acción del bot en la colección `bot_actions`.
 - Incluye timestamps en horario Argentina
 - Siempre crea un nuevo registro (no actualiza existentes)
 
+### `getContactContext(contactId)`
+Obtiene el contexto histórico completo de un contacto de las últimas 24 horas.
+
+**Parámetros:**
+```typescript
+contactId: string
+```
+
+**Retorna:**
+```typescript
+{
+  contactId: string;
+  userInfo?: {
+    name: string;
+    clientId: string;
+    source: string;
+    sourceName: string;
+    firstMessage: string;
+    firstMessageDate: string;
+  };
+  activeLeads: Array<{
+    leadId: string;
+    status?: string;
+    createdAt: string;
+    lastActivity?: string;
+  }>;
+  recentMessages: Array<{
+    text: string;
+    type: "incoming" | "outgoing";
+    createdAt: string;
+    authorName: string;
+  }>;
+  activeTasks: Array<{
+    talkId: string;
+    isInWork: boolean;
+    isRead: boolean;
+    createdAt: string;
+    lastActivity?: string;
+  }>;
+  botActions: Array<{
+    messageText: string;
+    aiDecision: {
+      currentStatus: string;
+      newStatus: string;
+      shouldChange: boolean;
+      reasoning: string;
+      confidence: number;
+    };
+    statusUpdateResult: {
+      success: boolean;
+      error?: string;
+    };
+    processingTimestamp: string;
+  }>;
+  summary: {
+    totalMessages: number;
+    lastActivity: string;
+    currentStatus?: string;
+    conversationDuration: string;
+  };
+}
+```
+
+**Comportamiento:**
+- Consulta todas las colecciones relacionadas con el contactId
+- Filtra datos de las últimas 24 horas
+- Sintetiza la información eliminando duplicados
+- Calcula estadísticas del resumen
+- Optimizado con consultas paralelas para mejor rendimiento
+
 ## Utilidades de Fecha
 
 ### `convertToArgentinaISO(dateString: string)`
@@ -239,7 +309,7 @@ Los servicios están integrados en el endpoint `/api/webhook-kommo/route.ts` y p
 1. **Unsorted Add**: Crea usuario y lead
 2. **Talk Add**: Crea conversación
 3. **Talk Update**: Actualiza conversación
-4. **Message Add**: Guarda mensaje, procesa con IA y registra acción del bot en `bot_actions`
+4. **Message Add**: Guarda mensaje, obtiene contexto histórico (24h), procesa con IA contextual y registra acción del bot en `bot_actions`
 
 ## Configuración
 
@@ -248,7 +318,8 @@ Asegúrate de tener configurada la variable de entorno `MONGO_DB_URI` apuntando 
 ## Ejemplo de Uso
 
 ```typescript
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction } from '@/lib/mongodb-services';
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext } from '@/lib/mongodb-services';
+import { processMessageWithAI } from '@/lib/ai-processor';
 
 // Crear usuario
 const user = await createUser({
@@ -294,6 +365,21 @@ const botAction = await createBotAction({
     success: true
   }
 });
+
+// Obtener contexto histórico de un contacto
+const context = await getContactContext("9382110");
+console.log(`Cliente: ${context.userInfo?.name}`);
+console.log(`Mensajes en 24h: ${context.summary.totalMessages}`);
+console.log(`Status actual: ${context.summary.currentStatus}`);
+console.log(`Duración conversación: ${context.summary.conversationDuration}`);
+
+// El contexto se usa automáticamente en processMessageWithAI
+const aiDecision = await processMessageWithAI(
+  "Necesito el usuario para acceder",
+  "Revisar",
+  "talk_123",
+  context // <- Contexto histórico incluido
+);
 ```
 
 ## Manejo de Errores
@@ -306,3 +392,42 @@ Los servicios incluyen manejo de errores adecuado:
 - **Aislamiento de errores**: Los errores en el registro de acciones del bot (`createBotAction`) no afectan el flujo principal de procesamiento de mensajes
 
 Todos los errores son registrados usando el sistema de logging centralizado.
+
+## 🤖 Integración Contextual con IA
+
+El sistema implementa una integración avanzada con IA que utiliza el contexto histórico completo para tomar decisiones más precisas:
+
+### Funcionamiento:
+
+1. **Captura de Contexto**: Antes de procesar cada mensaje, el sistema consulta automáticamente:
+   - Información del usuario (último registro)
+   - Leads activos del contacto (últimas 24 horas)
+   - Historial de mensajes (últimos 10 mensajes)
+   - Conversaciones activas
+   - Historial de decisiones del bot (últimas 5)
+
+2. **Síntesis de Información**: La información se normaliza y sintetiza para:
+   - Eliminar duplicados
+   - Calcular estadísticas relevantes
+   - Determinar el status actual basado en acciones previas
+   - Calcular duración de la conversación
+
+3. **Enriquecimiento del Prompt**: El contexto histórico se incluye en el prompt de la IA, permitiendo:
+   - Análisis más preciso del progreso del cliente
+   - Detección de patrones de comportamiento
+   - Evaluación de repeticiones vs progreso real
+   - Decisiones más contextuales sobre cambios de status
+
+### Beneficios:
+
+- **Mejor Precisión**: La IA considera el historial completo antes de decidir
+- **Detección de Patrones**: Identifica repeticiones, progreso o estancamiento
+- **Decisiones Contextuales**: Las decisiones se basan en el flujo completo de la conversación
+- **Optimización de Recursos**: Evita procesar mensajes redundantes o clientes estancados
+
+### Colecciones Utilizadas:
+- `users`: Información básica del contacto
+- `leads`: Historial de leads asociados
+- `messages`: Historial de conversación
+- `tasks`: Conversaciones activas
+- `bot_actions`: Historial de decisiones de IA

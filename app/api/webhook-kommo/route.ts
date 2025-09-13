@@ -17,7 +17,7 @@ import {
   logWebhookError,
   logLeadStatusChange
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext } from "@/lib/mongodb-services"
 
 export async function POST(request: NextRequest) {
   try {
@@ -481,8 +481,17 @@ export async function POST(request: NextRequest) {
           logLeadStatusRetrieved(message.entity_id, currentStatus, "")
         }
 
-        // Process with AI usando el status efectivo (real o 'sin-status')
-        const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id)
+        // Obtener contexto histórico del contacto (últimas 24 horas)
+        let contactContext
+        try {
+          contactContext = await getContactContext(message.contact_id)
+        } catch (contextError) {
+          logWebhookError(contextError, "obteniendo contexto histórico del contacto")
+          // Continuar sin contexto si hay error
+        }
+
+        // Process with AI usando el status efectivo y contexto histórico
+        const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext)
 
         const processedMessage: ProcessedMessage = {
           talkId: message.talk_id,

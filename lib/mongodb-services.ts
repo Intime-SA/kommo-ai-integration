@@ -92,6 +92,59 @@ export interface BotActionDocument {
   createdAt: string; // ISO string en horario Argentina
 }
 
+// Interfaz para el contexto histórico de un contacto
+export interface ContactContext {
+  contactId: string;
+  userInfo?: {
+    name: string;
+    clientId: string;
+    source: string;
+    sourceName: string;
+    firstMessage: string;
+    firstMessageDate: string;
+  };
+  activeLeads: Array<{
+    leadId: string;
+    status?: string;
+    createdAt: string;
+    lastActivity?: string;
+  }>;
+  recentMessages: Array<{
+    text: string;
+    type: "incoming" | "outgoing";
+    createdAt: string;
+    authorName: string;
+  }>;
+  activeTasks: Array<{
+    talkId: string;
+    isInWork: boolean;
+    isRead: boolean;
+    createdAt: string;
+    lastActivity?: string;
+  }>;
+  botActions: Array<{
+    messageText: string;
+    aiDecision: {
+      currentStatus: string;
+      newStatus: string;
+      shouldChange: boolean;
+      reasoning: string;
+      confidence: number;
+    };
+    statusUpdateResult: {
+      success: boolean;
+      error?: string;
+    };
+    processingTimestamp: string;
+  }>;
+  summary: {
+    totalMessages: number;
+    lastActivity: string;
+    currentStatus?: string;
+    conversationDuration: string;
+  };
+}
+
 // Utilidad para convertir fechas al formato ISO string en horario Argentina
 export function convertToArgentinaISO(ts: string | number): string {
   // Convertir a número si viene como string
@@ -461,6 +514,150 @@ export class KommoDatabaseService {
     const result = await collection.insertOne(botActionData);
     return { ...botActionDocument, _id: result.insertedId.toString() };
   }
+
+  // Servicio para obtener contexto histórico de un contacto (últimas 24 horas)
+  async getContactContext(contactId: string): Promise<ContactContext> {
+    const client = await this.getClient();
+    const db = client.db('kommo');
+
+    // Calcular fecha límite (24 horas atrás)
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
+    // Consultas paralelas para optimizar rendimiento
+    const [
+      userResult,
+      leadsResult,
+      messagesResult,
+      tasksResult,
+      botActionsResult
+    ] = await Promise.all([
+      // Información del usuario
+      db.collection('users').findOne({ contactId }),
+
+      // Leads activos (últimas 24 horas)
+      db.collection('leads')
+        .find({
+          contactId,
+          createdAt: { $gte: twentyFourHoursAgo.toISOString() }
+        })
+        .sort({ createdAt: -1 })
+        .toArray(),
+
+      // Mensajes recientes
+      db.collection('messages')
+        .find({
+          contactId,
+          createdAt: { $gte: twentyFourHoursAgo.toISOString() }
+        })
+        .sort({ createdAt: 1 })
+        .toArray(),
+
+      // Tareas activas
+      db.collection('tasks')
+        .find({
+          contactId,
+          createdAt: { $gte: twentyFourHoursAgo.toISOString() }
+        })
+        .sort({ updatedAt: -1 })
+        .toArray(),
+
+      // Acciones del bot recientes
+      db.collection('bot_actions')
+        .find({
+          contactId,
+          createdAt: { $gte: twentyFourHoursAgo.toISOString() }
+        })
+        .sort({ createdAt: -1 })
+        .toArray()
+    ]);
+
+    // Procesar y normalizar la información del usuario
+    const userInfo = userResult ? {
+      name: userResult.name,
+      clientId: userResult.clientId,
+      source: userResult.source,
+      sourceName: userResult.sourceName,
+      firstMessage: userResult.messageText,
+      firstMessageDate: userResult.createdAt
+    } : undefined;
+
+    // Procesar leads activos
+    const activeLeads = leadsResult.map(lead => ({
+      leadId: lead.leadId,
+      createdAt: lead.createdAt,
+      lastActivity: lead.updatedAt
+    }));
+
+    // Procesar mensajes recientes
+    const recentMessages = messagesResult.map(msg => ({
+      text: msg.text,
+      type: msg.type,
+      createdAt: msg.createdAt,
+      authorName: msg.author?.name || 'Desconocido'
+    }));
+
+    // Procesar tareas activas
+    const activeTasks = tasksResult.map(task => ({
+      talkId: task.talkId,
+      isInWork: task.isInWork,
+      isRead: task.isRead,
+      createdAt: task.createdAt,
+      lastActivity: task.updatedAt
+    }));
+
+    // Procesar acciones del bot
+    const botActions = botActionsResult.map(action => ({
+      messageText: action.messageText,
+      aiDecision: action.aiDecision,
+      statusUpdateResult: action.statusUpdateResult,
+      processingTimestamp: action.processingTimestamp
+    }));
+
+    // Calcular resumen
+    const totalMessages = recentMessages.length;
+    const lastActivity = recentMessages.length > 0
+      ? recentMessages[recentMessages.length - 1].createdAt
+      : (userInfo?.firstMessageDate || new Date().toISOString());
+
+    // Determinar status actual basado en la última acción del bot
+    const currentStatus = botActions.length > 0
+      ? botActions[0].aiDecision.newStatus
+      : undefined;
+
+    // Calcular duración de la conversación
+    const firstActivity = userInfo?.firstMessageDate || lastActivity;
+    const conversationDuration = this.calculateDuration(firstActivity, lastActivity);
+
+    return {
+      contactId,
+      userInfo,
+      activeLeads,
+      recentMessages,
+      activeTasks,
+      botActions,
+      summary: {
+        totalMessages,
+        lastActivity,
+        currentStatus,
+        conversationDuration
+      }
+    };
+  }
+
+  // Método auxiliar para calcular duración
+  private calculateDuration(startDate: string, endDate: string): string {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffMs = end.getTime() - start.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (diffHours > 0) {
+      return `${diffHours}h ${diffMinutes}m`;
+    }
+    return `${diffMinutes}m`;
+  }
 }
 
 // Instancia singleton del servicio
@@ -484,3 +681,6 @@ export const receiveMessage = (data: Parameters<KommoDatabaseService['receiveMes
 
 export const createBotAction = (data: Parameters<KommoDatabaseService['createBotAction']>[0]) =>
   kommoDatabaseService.createBotAction(data);
+
+export const getContactContext = (contactId: string) =>
+  kommoDatabaseService.getContactContext(contactId);

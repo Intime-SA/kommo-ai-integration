@@ -2,6 +2,7 @@ import { generateObject } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 import type { LeadStatus, AIDecision } from "@/types/kommo"
+import type { ContactContext } from "@/lib/mongodb-services"
 import { logAiProcessingError, logAiPromptSent, logAiResponseReceived } from "./logger"
 
 const aiDecisionSchema = z.object({
@@ -12,10 +13,98 @@ const aiDecisionSchema = z.object({
   confidence: z.number().min(0).max(1),
 })
 
+// Función helper para formatear el contexto histórico del contacto
+function formatContactContext(context: ContactContext): string {
+  let contextText = `📋 CONTEXTO HISTÓRICO DEL CONTACTO (Últimas 24 horas):\n\n`
+
+  // Información del usuario
+  if (context.userInfo) {
+    contextText += `👤 INFORMACIÓN DEL USUARIO:
+- Nombre: ${context.userInfo.name}
+- ID Cliente: ${context.userInfo.clientId}
+- Origen: ${context.userInfo.sourceName} (${context.userInfo.source})
+- Primer mensaje: "${context.userInfo.firstMessage}"
+- Fecha primer contacto: ${new Date(context.userInfo.firstMessageDate).toLocaleString('es-AR')}
+
+`
+  }
+
+  // Resumen general
+  contextText += `📊 RESUMEN GENERAL:
+- Total mensajes en las últimas 24h: ${context.summary.totalMessages}
+- Última actividad: ${new Date(context.summary.lastActivity).toLocaleString('es-AR')}
+- Duración conversación: ${context.summary.conversationDuration}
+${context.summary.currentStatus ? `- Status actual: ${context.summary.currentStatus}` : '- Status actual: No determinado'}
+
+`
+
+  // Leads activos
+  if (context.activeLeads.length > 0) {
+    contextText += `🎯 LEADS ACTIVOS:\n`
+    context.activeLeads.forEach((lead, index) => {
+      contextText += `${index + 1}. Lead ID: ${lead.leadId}
+   - Creado: ${new Date(lead.createdAt).toLocaleString('es-AR')}
+   ${lead.lastActivity ? `- Última actividad: ${new Date(lead.lastActivity).toLocaleString('es-AR')}` : ''}\n`
+    })
+    contextText += '\n'
+  }
+
+  // Conversaciones activas
+  if (context.activeTasks.length > 0) {
+    contextText += `💬 CONVERSACIONES ACTIVAS:\n`
+    context.activeTasks.forEach((task, index) => {
+      contextText += `${index + 1}. Talk ID: ${task.talkId}
+   - En trabajo: ${task.isInWork ? 'Sí' : 'No'}
+   - Leído: ${task.isRead ? 'Sí' : 'No'}
+   - Creada: ${new Date(task.createdAt).toLocaleString('es-AR')}
+   ${task.lastActivity ? `- Última actividad: ${new Date(task.lastActivity).toLocaleString('es-AR')}` : ''}\n`
+    })
+    contextText += '\n'
+  }
+
+  // Historial de mensajes recientes (últimos 10 para no sobrecargar)
+  if (context.recentMessages.length > 0) {
+    contextText += `💭 HISTORIAL DE MENSAJES RECIENTES:\n`
+    const messagesToShow = context.recentMessages.slice(-10) // Últimos 10 mensajes
+    messagesToShow.forEach((msg, index) => {
+      const direction = msg.type === 'incoming' ? '→' : '←'
+      contextText += `${index + 1}. [${new Date(msg.createdAt).toLocaleString('es-AR')}] ${direction} ${msg.authorName}: "${msg.text}"\n`
+    })
+    contextText += '\n'
+  }
+
+  // Historial de decisiones del bot
+  if (context.botActions.length > 0) {
+    contextText += `🤖 HISTORIAL DE DECISIONES DEL BOT:\n`
+    context.botActions.slice(0, 5).forEach((action, index) => { // Últimas 5 decisiones
+      contextText += `${index + 1}. Mensaje: "${action.messageText}"
+   - Status anterior: ${action.aiDecision.currentStatus}
+   - Status nuevo: ${action.aiDecision.newStatus}
+   - ¿Cambió?: ${action.aiDecision.shouldChange ? 'Sí' : 'No'}
+   - Confianza: ${(action.aiDecision.confidence * 100).toFixed(1)}%
+   - Razón: ${action.aiDecision.reasoning}
+   - Resultado: ${action.statusUpdateResult.success ? '✅ Exitoso' : '❌ Falló'}
+   - Procesado: ${new Date(action.processingTimestamp).toLocaleString('es-AR')}\n\n`
+    })
+  }
+
+  contextText += `🔍 INSTRUCCIONES PARA ANÁLISIS:
+- Considera el historial completo para entender el contexto de la conversación
+- Evalúa si el nuevo mensaje representa progreso o repetición
+- Ten en cuenta el tiempo transcurrido y la frecuencia de mensajes
+- Si el cliente está repitiendo solicitudes, considera "NoCargo"
+- Si hay progreso claro hacia una acción (pedir usuario, CBU), actualiza el status correspondiente
+
+`
+
+  return contextText
+}
+
 export async function processMessageWithAI(
   messageText: string,
   currentStatus: LeadStatus,
   talkId: string,
+  contactContext?: ContactContext,
 ): Promise<AIDecision> {
   const systemMessage = `Eres un asistente de IA especializado en clasificar mensajes de clientes potenciales en un CRM (Kommo).
 
@@ -27,7 +116,7 @@ El status refleja el punto en el flujo comercial/operativo en el que se encuentr
 - "Revisar": Cliente con dudas, preguntas o solicitudes que no están contempladas en los botones del menú principal. Aquí requiere intervención manual de un operador/agente humano.
 - "PidioUsuario": Cliente potencial solicita un usuario/credencial para ingresar al sistema. La automatización se lo entrega y luego pasa a seguimiento.
 - "PidioCbuAlias": Cliente solicita información bancaria (CBU o alias) para hacer una transferencia. Luego espera acción del operador para verificar si el cliente avanza (envío de comprobante, carga, etc.).
-- "Cargo": Cliente confirma o demuestra que realizó una primera carga de dinero exitosa.
+- "Cargo": NO SE PUEDE ACTIVAR CON MENSAJE DEL CLIENTE. SOLO LO ACTIVA EL AGENTE HUMANO UPDATEANDO EL LEAD BLOQUEAR.
 - "NoCargo": Cliente que lleva tiempo sin cargar, o que envía mensajes repetitivos sin concretar acción. También puede aplicar cuando solo interactúa sin intención clara de avanzar.
 - "NoAtender": Cliente no calificado: niños, bromistas, molestos, vulgares, o comportamientos inapropiados. Debe marcarse para que el equipo no pierda tiempo.
 
@@ -56,6 +145,8 @@ Analiza este mensaje de cliente:
 Mensaje: "${messageText}"
 Status actual: "${currentStatus}"
 Talk ID: "${talkId}"
+
+${contactContext ? formatContactContext(contactContext) : ''}
 
 Determina:
 1. Si el status debe cambiar
