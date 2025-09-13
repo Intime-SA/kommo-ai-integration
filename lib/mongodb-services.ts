@@ -173,6 +173,20 @@ export function getCurrentArgentinaISO(): string {
   return dAR.toISOString();
 }
 
+// Función helper para convertir una fecha ISO a zona horaria de Argentina
+export function convertToArgentinaTime(dateString: string): Date {
+  const date = new Date(dateString);
+  // Si la fecha ya está en zona Argentina (como los datos almacenados),
+  // devolverla tal cual. Si viene del frontend, asumir que está en UTC y convertir.
+  // Para consultas, asumir que las fechas del frontend están en zona local/UTC
+  // y convertirlas a zona Argentina para comparar con los datos almacenados.
+
+  // Los datos se almacenan como: new Date().toISOString() pero restando 3 horas
+  // Para consultas, si el usuario envía "2025-09-12T15:18:00.000Z",
+  // necesitamos convertirlo a zona Argentina: restar 3 horas
+  return new Date(date.getTime() - (3 * 60 * 60 * 1000));
+}
+
 // Servicios para interactuar con MongoDB
 
 export class KommoDatabaseService {
@@ -658,6 +672,480 @@ export class KommoDatabaseService {
     }
     return `${diffMinutes}m`;
   }
+
+  // ===== MÉTODOS PARA CONSULTAR LOGS =====
+
+  /**
+   * Obtiene logs de mensajes recibidos con filtros y paginación
+   */
+  async getReceivedMessagesLogs(params: LogsQueryParams): Promise<{ logs: ReceivedMessageLog[], total: number }> {
+    const collection = await this.getCollection('messages');
+
+    // Construir pipeline de agregación para messages
+    const pipeline: any[] = [];
+
+    // Filtros de fecha
+    if (params.startDate || params.endDate) {
+      const dateFilter: any = {};
+      if (params.startDate) dateFilter.$gte = params.startDate;
+      if (params.endDate) dateFilter.$lte = params.endDate;
+      pipeline.push({ $match: { createdAt: dateFilter } });
+    }
+
+    // Filtros adicionales
+    const matchFilter: any = {};
+    const andConditions: any[] = [];
+
+    // Filtros específicos
+    if (params.contactId) andConditions.push({ contactId: params.contactId });
+    if (params.leadId) andConditions.push({ entityId: params.leadId });
+    if (params.talkId) andConditions.push({ talkId: params.talkId });
+    if (params.userName) andConditions.push({ 'author.name': { $regex: params.userName, $options: 'i' } });
+
+    // Filtro por searchTerm (busca en contactId, leadId o authorName)
+    if (params.searchTerm) {
+      const searchRegex = { $regex: params.searchTerm, $options: 'i' };
+      andConditions.push({
+        $or: [
+          { contactId: searchRegex },
+          { entityId: searchRegex },
+          { 'author.name': searchRegex },
+          { 'text': searchRegex } // También buscar en el texto del mensaje
+        ]
+      });
+    }
+
+    if (andConditions.length > 0) {
+      if (andConditions.length === 1) {
+        Object.assign(matchFilter, andConditions[0]);
+      } else {
+        matchFilter.$and = andConditions;
+      }
+    }
+
+    if (Object.keys(matchFilter).length > 0) {
+      pipeline.push({ $match: matchFilter });
+    }
+
+    // Lookup para obtener información del usuario/contacto
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'contactId',
+        foreignField: 'contactId',
+        as: 'userInfo'
+      }
+    });
+
+    // Lookup para obtener información del lead
+    pipeline.push({
+      $lookup: {
+        from: 'leads',
+        localField: 'entityId',
+        foreignField: 'leadId',
+        as: 'leadInfo'
+      }
+    });
+
+    // Proyección de los campos necesarios
+    pipeline.push({
+      $project: {
+        id: '$id',
+        timestamp: '$createdAt',
+        type: { $literal: 'received_messages' },
+        contactId: '$contactId',
+        leadId: '$entityId',
+        talkId: '$talkId',
+        messageText: '$text',
+        messageType: '$type',
+        authorName: '$author.name',
+        messageId: '$id',
+        chatId: '$chatId',
+        userName: { $ifNull: [{ $arrayElemAt: ['$userInfo.name', 0] }, '$author.name'] },
+        clientId: { $ifNull: [{ $arrayElemAt: ['$userInfo.clientId', 0] }, ''] },
+        sourceName: { $ifNull: [{ $arrayElemAt: ['$userInfo.sourceName', 0] }, ''] }
+      }
+    });
+
+    // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
+    const sortField = params.sortBy === 'timestamp' ? 'timestamp' :
+                     params.sortBy === 'userName' ? 'userName' :
+                     params.sortBy === 'contactId' ? 'contactId' :
+                     params.sortBy === 'leadId' ? 'leadId' :
+                     params.sortBy === 'type' ? 'type' : 'timestamp';
+    const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+    pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
+
+    // Contar total antes de paginación
+    const countPipeline = [...pipeline, { $count: "total" }];
+    const totalResult = await collection.aggregate(countPipeline).toArray();
+    const total = totalResult.length > 0 ? totalResult[0].total : 0;
+
+    // Paginación
+    const limit = params.limit || 50;
+    const offset = params.offset || 0;
+    pipeline.push({ $skip: offset }, { $limit: limit });
+
+    const logs = await collection.aggregate(pipeline).toArray();
+
+    return {
+      logs: logs.map((log, index) => ({
+        ...log,
+        index: offset + index + 1,
+        userName: log.userName || 'Usuario desconocido',
+        clientId: log.clientId || '',
+        sourceName: log.sourceName || ''
+      })) as ReceivedMessageLog[],
+      total
+    };
+  }
+
+  /**
+   * Obtiene logs de cambios de status
+   */
+  async getChangeStatusLogs(params: LogsQueryParams): Promise<{ logs: ChangeStatusLog[], total: number }> {
+    const collection = await this.getCollection('bot_actions');
+
+    // Construir pipeline de agregación
+    const pipeline: any[] = [];
+
+    // Filtros de fecha
+    if (params.startDate || params.endDate) {
+      const dateFilter: any = {};
+      if (params.startDate) dateFilter.$gte = params.startDate;
+      if (params.endDate) dateFilter.$lte = params.endDate;
+      pipeline.push({ $match: { createdAt: dateFilter } });
+    }
+
+    // Filtros adicionales
+    const matchFilter: any = {};
+    const andConditions: any[] = [];
+
+    // Filtros específicos
+    if (params.contactId) andConditions.push({ contactId: params.contactId });
+    if (params.leadId) andConditions.push({ entityId: params.leadId });
+    if (params.talkId) andConditions.push({ talkId: params.talkId });
+    if (params.status) andConditions.push({ 'aiDecision.newStatus': params.status });
+    if (params.changedBy === 'bot') andConditions.push({ 'aiDecision.shouldChange': true });
+
+    // Filtro por searchTerm (busca en contactId, leadId o userName)
+    if (params.searchTerm) {
+      const searchRegex = { $regex: params.searchTerm, $options: 'i' };
+      andConditions.push({
+        $or: [
+          { contactId: searchRegex },
+          { entityId: searchRegex },
+          { messageText: searchRegex }
+        ]
+      });
+    }
+
+    if (andConditions.length > 0) {
+      if (andConditions.length === 1) {
+        Object.assign(matchFilter, andConditions[0]);
+      } else {
+        matchFilter.$and = andConditions;
+      }
+    }
+
+    if (Object.keys(matchFilter).length > 0) {
+      pipeline.push({ $match: matchFilter });
+    }
+
+    // Lookup para obtener información del usuario
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'contactId',
+        foreignField: 'contactId',
+        as: 'userInfo'
+      }
+    });
+
+    // Proyección
+    pipeline.push({
+      $project: {
+        id: '$_id',
+        timestamp: '$createdAt',
+        type: { $literal: 'change_status' },
+        contactId: '$contactId',
+        leadId: '$entityId',
+        talkId: '$talkId',
+        oldStatus: '$aiDecision.currentStatus',
+        newStatus: '$aiDecision.newStatus',
+        changedBy: { $literal: 'bot' },
+        reason: '$aiDecision.reasoning',
+        confidence: '$aiDecision.confidence',
+        success: '$statusUpdateResult.success',
+        userName: { $ifNull: [{ $arrayElemAt: ['$userInfo.name', 0] }, 'Usuario desconocido'] },
+        clientId: { $ifNull: [{ $arrayElemAt: ['$userInfo.clientId', 0] }, ''] },
+        sourceName: { $ifNull: [{ $arrayElemAt: ['$userInfo.sourceName', 0] }, ''] }
+      }
+    });
+
+    // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
+    const sortField = params.sortBy === 'timestamp' ? 'timestamp' :
+                     params.sortBy === 'userName' ? 'userName' :
+                     params.sortBy === 'contactId' ? 'contactId' :
+                     params.sortBy === 'leadId' ? 'leadId' :
+                     params.sortBy === 'type' ? 'type' : 'timestamp';
+    const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+    pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
+
+    // Contar total
+    const countPipeline = [...pipeline, { $count: "total" }];
+    const totalResult = await collection.aggregate(countPipeline).toArray();
+    const total = totalResult.length > 0 ? totalResult[0].total : 0;
+
+    // Paginación
+    const limit = params.limit || 50;
+    const offset = params.offset || 0;
+    pipeline.push({ $skip: offset }, { $limit: limit });
+
+    const logs = await collection.aggregate(pipeline).toArray();
+
+    return {
+      logs: logs.map((log, index) => ({
+        ...log,
+        index: offset + index + 1,
+        id: log.id.toString(),
+        userName: log.userName || 'Usuario desconocido',
+        clientId: log.clientId || '',
+        sourceName: log.sourceName || ''
+      })) as ChangeStatusLog[],
+      total
+    };
+  }
+
+  /**
+   * Obtiene logs de acciones del bot
+   */
+  async getBotActionsLogs(params: LogsQueryParams): Promise<{ logs: BotActionLog[], total: number }> {
+    const collection = await this.getCollection('bot_actions');
+
+    // Construir pipeline de agregación
+    const pipeline: any[] = [];
+
+    // Filtros de fecha
+    if (params.startDate || params.endDate) {
+      const dateFilter: any = {};
+      if (params.startDate) dateFilter.$gte = params.startDate;
+      if (params.endDate) dateFilter.$lte = params.endDate;
+      pipeline.push({ $match: { createdAt: dateFilter } });
+    }
+
+    // Filtros adicionales
+    const matchFilter: any = {};
+    const andConditions: any[] = [];
+
+    // Filtros específicos
+    if (params.contactId) andConditions.push({ contactId: params.contactId });
+    if (params.leadId) andConditions.push({ entityId: params.leadId });
+    if (params.talkId) andConditions.push({ talkId: params.talkId });
+    if (params.status) andConditions.push({ 'aiDecision.newStatus': params.status });
+
+    // Filtro por searchTerm (busca en contactId, leadId o userName)
+    if (params.searchTerm) {
+      const searchRegex = { $regex: params.searchTerm, $options: 'i' };
+      andConditions.push({
+        $or: [
+          { contactId: searchRegex },
+          { entityId: searchRegex },
+          { messageText: searchRegex }
+        ]
+      });
+    }
+
+    if (andConditions.length > 0) {
+      if (andConditions.length === 1) {
+        Object.assign(matchFilter, andConditions[0]);
+      } else {
+        matchFilter.$and = andConditions;
+      }
+    }
+
+    if (Object.keys(matchFilter).length > 0) {
+      pipeline.push({ $match: matchFilter });
+    }
+
+    // Lookup para obtener información del usuario
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'contactId',
+        foreignField: 'contactId',
+        as: 'userInfo'
+      }
+    });
+
+    // Calcular tiempo de procesamiento
+    pipeline.push({
+      $addFields: {
+        processingTime: {
+          $subtract: [
+            { $dateFromString: { dateString: '$createdAt' } },
+            { $dateFromString: { dateString: '$messageCreatedAt' } }
+          ]
+        }
+      }
+    });
+
+    // Proyección
+    pipeline.push({
+      $project: {
+        id: '$_id',
+        timestamp: '$createdAt',
+        type: { $literal: 'bot_actions' },
+        contactId: '$contactId',
+        leadId: '$entityId',
+        talkId: '$talkId',
+        messageText: '$messageText',
+        aiDecision: '$aiDecision',
+        statusUpdateResult: '$statusUpdateResult',
+        processingTime: '$processingTime',
+        userName: { $ifNull: [{ $arrayElemAt: ['$userInfo.name', 0] }, 'Usuario desconocido'] },
+        clientId: { $ifNull: [{ $arrayElemAt: ['$userInfo.clientId', 0] }, ''] },
+        sourceName: { $ifNull: [{ $arrayElemAt: ['$userInfo.sourceName', 0] }, ''] }
+      }
+    });
+
+    // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
+    const sortField = params.sortBy === 'timestamp' ? 'timestamp' :
+                     params.sortBy === 'userName' ? 'userName' :
+                     params.sortBy === 'contactId' ? 'contactId' :
+                     params.sortBy === 'leadId' ? 'leadId' :
+                     params.sortBy === 'type' ? 'type' : 'timestamp';
+    const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+    pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
+
+    // Contar total
+    const countPipeline = [...pipeline, { $count: "total" }];
+    const totalResult = await collection.aggregate(countPipeline).toArray();
+    const total = totalResult.length > 0 ? totalResult[0].total : 0;
+
+    // Paginación
+    const limit = params.limit || 50;
+    const offset = params.offset || 0;
+    pipeline.push({ $skip: offset }, { $limit: limit });
+
+    const logs = await collection.aggregate(pipeline).toArray();
+
+    return {
+      logs: logs.map((log, index) => ({
+        ...log,
+        index: offset + index + 1,
+        id: log.id.toString(),
+        userName: log.userName || 'Usuario desconocido',
+        clientId: log.clientId || '',
+        sourceName: log.sourceName || '',
+        processingTime: typeof log.processingTime === 'number' ? log.processingTime : 0
+      })) as BotActionLog[],
+      total
+    };
+  }
+
+  /**
+   * Obtiene logs consolidados de todos los tipos
+   */
+  async getConsolidatedLogs(params: LogsQueryParams): Promise<LogsResponse> {
+    const limit = params.limit || 50;
+    const offset = params.offset || 0;
+
+    let allLogs: LogEntry[] = [];
+    let totalCount = 0;
+
+    // Si se especifica un tipo específico, consultar solo ese
+    if (params.logType === 'received_messages') {
+      const result = await this.getReceivedMessagesLogs(params);
+      allLogs = result.logs;
+      totalCount = result.total;
+    } else if (params.logType === 'change_status') {
+      const result = await this.getChangeStatusLogs(params);
+      allLogs = result.logs;
+      totalCount = result.total;
+    } else if (params.logType === 'bot_actions') {
+      const result = await this.getBotActionsLogs(params);
+      allLogs = result.logs;
+      totalCount = result.total;
+    } else {
+      // Consultar todos los tipos y combinar
+      const [messagesResult, statusResult, actionsResult] = await Promise.all([
+        this.getReceivedMessagesLogs({ ...params, limit: 10000, offset: 0 }), // Obtener más para combinar
+        this.getChangeStatusLogs({ ...params, limit: 10000, offset: 0 }),
+        this.getBotActionsLogs({ ...params, limit: 10000, offset: 0 })
+      ]);
+
+      // Combinar logs
+      const combinedLogs = [
+        ...messagesResult.logs,
+        ...statusResult.logs,
+        ...actionsResult.logs
+      ];
+
+      // Ordenar según los parámetros especificados con estabilidad (id como criterio secundario)
+      allLogs = combinedLogs.sort((a, b) => {
+        let aValue: any, bValue: any;
+
+        switch (params.sortBy) {
+          case 'timestamp':
+            aValue = new Date(a.timestamp).getTime();
+            bValue = new Date(b.timestamp).getTime();
+            break;
+          case 'userName':
+            aValue = a.userName?.toLowerCase() || '';
+            bValue = b.userName?.toLowerCase() || '';
+            break;
+          case 'contactId':
+            aValue = a.contactId?.toLowerCase() || '';
+            bValue = b.contactId?.toLowerCase() || '';
+            break;
+          case 'type':
+            aValue = a.type;
+            bValue = b.type;
+            break;
+          case 'leadId':
+            aValue = a.leadId || '';
+            bValue = b.leadId || '';
+            break;
+          default:
+            aValue = new Date(a.timestamp).getTime();
+            bValue = new Date(b.timestamp).getTime();
+        }
+
+        // Primero comparar por el campo principal
+        if (aValue < bValue) return params.sortOrder === 'asc' ? -1 : 1;
+        if (aValue > bValue) return params.sortOrder === 'asc' ? 1 : -1;
+
+        // Si son iguales, usar id como criterio secundario para estabilidad
+        const aId = a.id || '';
+        const bId = b.id || '';
+        if (aId < bId) return -1;
+        if (aId > bId) return 1;
+
+        return 0;
+      });
+
+      totalCount = messagesResult.total + statusResult.total + actionsResult.total;
+    }
+
+    // Aplicar paginación al resultado combinado
+    const paginatedLogs = allLogs.slice(offset, offset + limit);
+
+    // Asignar índices consecutivos a los logs paginados
+    const logsWithIndex = paginatedLogs.map((log, index) => ({
+      ...log,
+      index: offset + index + 1
+    }));
+
+    return {
+      logs: logsWithIndex,
+      total: totalCount,
+      limit,
+      offset,
+      hasMore: offset + limit < totalCount,
+      query: params
+    };
+  }
 }
 
 // Instancia singleton del servicio
@@ -684,3 +1172,101 @@ export const createBotAction = (data: Parameters<KommoDatabaseService['createBot
 
 export const getContactContext = (contactId: string) =>
   kommoDatabaseService.getContactContext(contactId);
+
+// Funciones de conveniencia para logs
+export const getReceivedMessagesLogs = (params: LogsQueryParams) =>
+  kommoDatabaseService.getReceivedMessagesLogs(params);
+
+export const getChangeStatusLogs = (params: LogsQueryParams) =>
+  kommoDatabaseService.getChangeStatusLogs(params);
+
+export const getBotActionsLogs = (params: LogsQueryParams) =>
+  kommoDatabaseService.getBotActionsLogs(params);
+
+export const getConsolidatedLogs = (params: LogsQueryParams) =>
+  kommoDatabaseService.getConsolidatedLogs(params);
+
+// ===== TIPOS PARA LOGS CONSOLIDADOS =====
+
+export type LogType = 'received_messages' | 'change_status' | 'bot_actions';
+
+export interface BaseLogEntry {
+  index: number;
+  id: string;
+  timestamp: string;
+  type: LogType;
+  contactId: string;
+  leadId?: string;
+  talkId?: string;
+  userName: string;
+  clientId: string;
+  sourceName: string;
+}
+
+export interface ReceivedMessageLog extends BaseLogEntry {
+  type: 'received_messages';
+  messageText: string;
+  messageType: 'incoming' | 'outgoing';
+  authorName: string;
+  messageId: string;
+  chatId: string;
+}
+
+export interface ChangeStatusLog extends BaseLogEntry {
+  type: 'change_status';
+  oldStatus?: string;
+  newStatus: string;
+  changedBy: 'bot' | 'manual' | 'system';
+  reason?: string;
+  confidence?: number;
+  success: boolean;
+}
+
+export interface BotActionLog extends BaseLogEntry {
+  type: 'bot_actions';
+  messageText: string;
+  aiDecision: {
+    currentStatus: string;
+    newStatus: string;
+    shouldChange: boolean;
+    reasoning: string;
+    confidence: number;
+  };
+  statusUpdateResult: {
+    success: boolean;
+    error?: string;
+  };
+  processingTime: number; // en ms
+}
+
+export type LogEntry = ReceivedMessageLog | ChangeStatusLog | BotActionLog;
+
+// Parámetros de consulta para logs
+export interface LogsQueryParams {
+  searchTerm?: string;
+  startDate?: string;
+  endDate?: string;
+  logType?: LogType;
+  contactId?: string;
+  leadId?: string;
+  talkId?: string;
+  userName?: string;
+  clientId?: string;
+  sourceName?: string;
+  status?: string;
+  changedBy?: 'bot' | 'manual' | 'system';
+  limit?: number;
+  offset?: number;
+    sortBy?: 'timestamp' | 'userName' | 'contactId' | 'type' | 'leadId';
+  sortOrder?: 'asc' | 'desc';
+}
+
+// Respuesta del endpoint de logs
+export interface LogsResponse {
+  logs: LogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  query: LogsQueryParams;
+}
