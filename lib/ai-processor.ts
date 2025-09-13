@@ -1,13 +1,14 @@
 import { generateObject } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
-import type { LeadStatus, AIDecision } from "@/types/kommo"
+import type { LeadStatus, BotAssignableStatus, AIDecision } from "@/types/kommo"
 import type { ContactContext } from "@/lib/mongodb-services"
 import { logAiProcessingError, logAiPromptSent, logAiResponseReceived } from "./logger"
 
+// Schema para validar las decisiones de la IA (excluye "Cargo" por restricción de seguridad)
 const aiDecisionSchema = z.object({
   currentStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "Cargo", "NoCargo", "NoAtender", "sin-status"]),
-  newStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "Cargo", "NoCargo", "NoAtender", "sin-status"]),
+  newStatus: z.enum(["Revisar", "PidioUsuario", "PidioCbuAlias", "NoCargo", "NoAtender", "sin-status"]),
   shouldChange: z.boolean(),
   reasoning: z.string(),
   confidence: z.number().min(0).max(1),
@@ -94,6 +95,7 @@ ${context.summary.currentStatus ? `- Status actual: ${context.summary.currentSta
 - Ten en cuenta el tiempo transcurrido y la frecuencia de mensajes
 - Si el cliente está repitiendo solicitudes, considera "NoCargo"
 - Si hay progreso claro hacia una acción (pedir usuario, CBU), actualiza el status correspondiente
+- ⚠️ NUNCA cambies a "Cargo", incluso si el cliente confirma transferencias o envía comprobantes
 
 `
 
@@ -111,7 +113,15 @@ export async function processMessageWithAI(
 Tu objetivo es analizar mensajes ENTRANTES de clientes y decidir si corresponde cambiar el status del Lead.
 El status refleja el punto en el flujo comercial/operativo en el que se encuentra el cliente.
 
-📌 ESTADOS DISPONIBLES:
+⚠️  **IMPORTANTE - RESTRICCIÓN CRÍTICA**: NUNCA, BAJO NINGUNA CIRCUNSTANCIA, puedes cambiar el status a "Cargo".
+Esto incluye:
+- Mensajes confirmando transferencias realizadas
+- Comprobantes de pago enviados
+- Cualquier confirmación de carga exitosa
+- Mensajes que indiquen que ya transfirieron el dinero
+El status "Cargo" SOLO puede ser establecido por procesos manuales o sistemas externos, NUNCA por este bot.
+
+📌 ESTADOS DISPONIBLES PARA CAMBIOS:
 - "sin-status": No se pudo obtener el status actual del lead, enviar a "Revisar".
 - "Revisar": Cliente con dudas, preguntas o solicitudes que no están contempladas en los botones del menú principal. Aquí requiere intervención manual de un operador/agente humano.
 - "PidioUsuario": Cliente potencial solicita un usuario/credencial para ingresar al sistema. La automatización se lo entrega y luego pasa a seguimiento.
@@ -121,21 +131,24 @@ El status refleja el punto en el flujo comercial/operativo en el que se encuentr
 
 📌 REGLAS DE DECISIÓN:
 1. Analiza siempre el contenido literal del mensaje, pero también el contexto del status actual del Lead.
-2. Solo cambia el status si hay una razón clara y específica en el mensaje (ejemplo: pide usuario, envía comprobante, pide CBU).
+2. Solo cambia el status si hay una razón clara y específica en el mensaje (ejemplo: pide usuario, pide CBU).
 3. Si el mensaje no aporta información nueva, mantiene el status actual.
 4. El status "Revisar" es un comodín para consultas fuera del flujo automático: dudas, preguntas generales, etc.
 5. El status "NoCargo" se aplica cuando hay inacción prolongada o mensajes que no generan avance (aunque sean educados).
 6. El status "No atender" se aplica solo a casos claros de clientes no deseados (tóxicos, niños, vulgares, trolls).
-7. Tu razonamiento debe explicar con precisión por qué cambias o mantienes el status.
-8. Responde siempre en español.
+7. **NUNCA** cambies a "Cargo", independientemente del mensaje recibido.
+8. Si un cliente confirma que ya realizó una transferencia, mantén el status actual o cambia a "Revisar" para verificación manual.
+9. Tu razonamiento debe explicar con precisión por qué cambias o mantienes el status.
+10. Responde siempre en español.
 
 📌 EJEMPLOS RÁPIDOS:
 - Cliente dice: "¿Me pasas el usuario?" → newStatus = "PidioUsuario"
 - Cliente dice: "Pasame cuenta" → newStatus = "PidioCbuAlias"
-- Cliente envía: "Ya cargué $500" → newStatus = "Cargo"
 - Cliente dice: "Hola" y ya estaba en "PidioCbuAlias" → mantener status
+- Cliente dice: "Ya cargué $500" → **NO CAMBIAR A "Cargo"** → mantener status o cambiar a "Revisar"
 - Cliente dice: "No voy a cargar nada, chau" → newStatus = "NoCargo"
 - Cliente insulta o hace chistes sin sentido → newStatus = "NoAtender"
+- Cliente envía comprobante de transferencia → **NO CAMBIAR A "Cargo"** → cambiar a "Revisar" para verificación manual
 `
 
   const prompt = `
@@ -172,10 +185,12 @@ Determina:
   } catch (error) {
     logAiProcessingError(error)
 
-    // Fallback decision
+    // Fallback decision - si currentStatus es "Cargo", cambiar a "Revisar" para revisión manual
+    const fallbackNewStatus: BotAssignableStatus = currentStatus === "Cargo" ? "Revisar" : currentStatus as BotAssignableStatus
+
     return {
       currentStatus,
-      newStatus: currentStatus,
+      newStatus: fallbackNewStatus,
       shouldChange: false,
       reasoning: "Error en el procesamiento de IA, manteniendo status actual",
       confidence: 0,

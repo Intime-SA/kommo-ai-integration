@@ -134,9 +134,12 @@ export interface KommoWebhookData {
 
 export type LeadStatus = "Revisar" | "PidioUsuario" | "PidioCbuAlias" | "Cargo" | "NoCargo" | "NoAtender" | "Seguimiento" | "Ganado" | "Perdido" | "sin-status"
 
+// Status que el bot puede asignar como nuevos (excluye "Cargo" por restricción de seguridad)
+export type BotAssignableStatus = "Revisar" | "PidioUsuario" | "PidioCbuAlias" | "NoCargo" | "NoAtender" | "sin-status"
+
 export interface AIDecision {
   currentStatus: LeadStatus
-  newStatus: LeadStatus
+  newStatus: BotAssignableStatus
   shouldChange: boolean
   reasoning: string
   confidence: number
