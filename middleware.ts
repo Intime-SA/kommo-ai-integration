@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 
 // Lista de orígenes permitidos
 const allowedOrigins = [
+  'https://kommo-ai-dashboard.vercel.app/',
   'https://kommo-ai-dashboard.vercel.app',
   'http://localhost:3000',  // Frontend típico
   'http://127.0.0.1:3000', // Frontend alternativo

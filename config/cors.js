@@ -2,6 +2,8 @@
 const corsConfig = {
   // URLs permitidas para CORS
   allowedOrigins: [
+    'https://kommo-ai-dashboard.vercel.app',
+    'https://kommo-ai-dashboard.vercel.app/',
     'http://localhost:3000',  // Frontend típico
     'http://127.0.0.1:3000', // Frontend alternativo
     'http://localhost:3001', // Si el backend está en 3001
