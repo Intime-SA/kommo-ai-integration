@@ -97,6 +97,11 @@ export interface LogsResponse {
   limit: number;
   offset: number;
   hasMore: boolean;
+  stats: {
+    received_messages: number;
+    change_status: number;
+    bot_actions: number;
+  };
   query: LogsQueryParams;
 }
 

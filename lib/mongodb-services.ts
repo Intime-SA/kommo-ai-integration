@@ -1,6 +1,18 @@
 import { MongoClient } from 'mongodb';
 import clientPromise from './mongodb';
 
+// Función helper para obtener fecha hace N horas
+function getDateHoursAgo(hours: number): string {
+  const date = new Date();
+  date.setHours(date.getHours() - hours);
+  return date.toISOString();
+}
+
+// Función helper para obtener fecha actual
+function getCurrentDate(): string {
+  return new Date().toISOString();
+}
+
 // Tipos para las colecciones MongoDB
 
 export interface UserDocument {
@@ -776,17 +788,17 @@ export class KommoDatabaseService {
     const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
     pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
 
-    // Contar total antes de paginación
-    const countPipeline = [...pipeline, { $count: "total" }];
-    const totalResult = await collection.aggregate(countPipeline).toArray();
-    const total = totalResult.length > 0 ? totalResult[0].total : 0;
-
     // Paginación
     const limit = params.limit || 50;
     const offset = params.offset || 0;
     pipeline.push({ $skip: offset }, { $limit: limit });
 
     const logs = await collection.aggregate(pipeline).toArray();
+
+    // Contar total usando consulta separada sin paginación
+    const countPipeline = [...pipeline.slice(0, -2), { $count: "total" }]; // Quitar skip y limit
+    const countResult = await collection.aggregate(countPipeline).toArray();
+    const total = countResult.length > 0 ? countResult[0].total : 0;
 
     return {
       logs: logs.map((log, index) => ({
@@ -892,17 +904,17 @@ export class KommoDatabaseService {
     const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
     pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
 
-    // Contar total
-    const countPipeline = [...pipeline, { $count: "total" }];
-    const totalResult = await collection.aggregate(countPipeline).toArray();
-    const total = totalResult.length > 0 ? totalResult[0].total : 0;
-
     // Paginación
     const limit = params.limit || 50;
     const offset = params.offset || 0;
     pipeline.push({ $skip: offset }, { $limit: limit });
 
     const logs = await collection.aggregate(pipeline).toArray();
+
+    // Contar total usando consulta separada sin paginación
+    const countPipeline = [...pipeline.slice(0, -2), { $count: "total" }]; // Quitar skip y limit
+    const countResult = await collection.aggregate(countPipeline).toArray();
+    const total = countResult.length > 0 ? countResult[0].total : 0;
 
     return {
       logs: logs.map((log, index) => ({
@@ -1018,17 +1030,17 @@ export class KommoDatabaseService {
     const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
     pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
 
-    // Contar total
-    const countPipeline = [...pipeline, { $count: "total" }];
-    const totalResult = await collection.aggregate(countPipeline).toArray();
-    const total = totalResult.length > 0 ? totalResult[0].total : 0;
-
     // Paginación
     const limit = params.limit || 50;
     const offset = params.offset || 0;
     pipeline.push({ $skip: offset }, { $limit: limit });
 
     const logs = await collection.aggregate(pipeline).toArray();
+
+    // Contar total usando consulta separada sin paginación
+    const countPipeline = [...pipeline.slice(0, -2), { $count: "total" }]; // Quitar skip y limit
+    const countResult = await collection.aggregate(countPipeline).toArray();
+    const total = countResult.length > 0 ? countResult[0].total : 0;
 
     return {
       logs: logs.map((log, index) => ({
@@ -1045,34 +1057,91 @@ export class KommoDatabaseService {
   }
 
   /**
+   * Obtiene estadísticas de logs por tipo
+   */
+  async getLogsStats(params: LogsQueryParams): Promise<{
+    received_messages: number;
+    change_status: number;
+    bot_actions: number;
+  }> {
+    // Ejecutar consultas en paralelo para obtener conteos por tipo
+    const [messagesCount, statusCount, actionsCount] = await Promise.all([
+      this.getReceivedMessagesLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0),
+      this.getChangeStatusLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0),
+      this.getBotActionsLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0)
+    ]);
+
+    return {
+      received_messages: messagesCount,
+      change_status: statusCount,
+      bot_actions: actionsCount
+    };
+  }
+
+  /**
    * Obtiene logs consolidados de todos los tipos
    */
   async getConsolidatedLogs(params: LogsQueryParams): Promise<LogsResponse> {
-    const limit = params.limit || 50;
-    const offset = params.offset || 0;
+    // Aplicar filtro de 24 horas por defecto si no se especifican fechas
+    const effectiveParams = !params.startDate && !params.endDate ? {
+      ...params,
+      startDate: getDateHoursAgo(24),
+      endDate: getCurrentDate()
+    } : params;
+
+    const limit = effectiveParams.limit || 50;
+    const offset = effectiveParams.offset || 0;
 
     let allLogs: LogEntry[] = [];
     let totalCount = 0;
 
+    // Calcular estadísticas por tipo de log
+    const stats = await this.getLogsStats(effectiveParams);
+
     // Si se especifica un tipo específico, consultar solo ese
-    if (params.logType === 'received_messages') {
-      const result = await this.getReceivedMessagesLogs(params);
-      allLogs = result.logs;
-      totalCount = result.total;
-    } else if (params.logType === 'change_status') {
-      const result = await this.getChangeStatusLogs(params);
-      allLogs = result.logs;
-      totalCount = result.total;
-    } else if (params.logType === 'bot_actions') {
-      const result = await this.getBotActionsLogs(params);
-      allLogs = result.logs;
-      totalCount = result.total;
+    // Los métodos individuales ya manejan la paginación, así que no aplicar paginación adicional
+    if (effectiveParams.logType === 'received_messages') {
+      const result = await this.getReceivedMessagesLogs(effectiveParams);
+      // Los logs ya vienen paginados del método individual
+      return {
+        logs: result.logs,
+        total: result.total,
+        limit,
+        offset,
+        hasMore: offset + limit < result.total,
+        stats,
+        query: effectiveParams
+      };
+    } else if (effectiveParams.logType === 'change_status') {
+      const result = await this.getChangeStatusLogs(effectiveParams);
+      // Los logs ya vienen paginados del método individual
+      return {
+        logs: result.logs,
+        total: result.total,
+        limit,
+        offset,
+        hasMore: offset + limit < result.total,
+        stats,
+        query: effectiveParams
+      };
+    } else if (effectiveParams.logType === 'bot_actions') {
+      const result = await this.getBotActionsLogs(effectiveParams);
+      // Los logs ya vienen paginados del método individual
+      return {
+        logs: result.logs,
+        total: result.total,
+        limit,
+        offset,
+        hasMore: offset + limit < result.total,
+        stats,
+        query: effectiveParams
+      };
     } else {
       // Consultar todos los tipos y combinar
       const [messagesResult, statusResult, actionsResult] = await Promise.all([
-        this.getReceivedMessagesLogs({ ...params, limit: 10000, offset: 0 }), // Obtener más para combinar
-        this.getChangeStatusLogs({ ...params, limit: 10000, offset: 0 }),
-        this.getBotActionsLogs({ ...params, limit: 10000, offset: 0 })
+        this.getReceivedMessagesLogs({ ...effectiveParams, limit: 10000, offset: 0 }), // Obtener más para combinar
+        this.getChangeStatusLogs({ ...effectiveParams, limit: 10000, offset: 0 }),
+        this.getBotActionsLogs({ ...effectiveParams, limit: 10000, offset: 0 })
       ]);
 
       // Combinar logs
@@ -1086,7 +1155,7 @@ export class KommoDatabaseService {
       allLogs = combinedLogs.sort((a, b) => {
         let aValue: any, bValue: any;
 
-        switch (params.sortBy) {
+        switch (effectiveParams.sortBy) {
           case 'timestamp':
             aValue = new Date(a.timestamp).getTime();
             bValue = new Date(b.timestamp).getTime();
@@ -1113,8 +1182,8 @@ export class KommoDatabaseService {
         }
 
         // Primero comparar por el campo principal
-        if (aValue < bValue) return params.sortOrder === 'asc' ? -1 : 1;
-        if (aValue > bValue) return params.sortOrder === 'asc' ? 1 : -1;
+        if (aValue < bValue) return effectiveParams.sortOrder === 'asc' ? -1 : 1;
+        if (aValue > bValue) return effectiveParams.sortOrder === 'asc' ? 1 : -1;
 
         // Si son iguales, usar id como criterio secundario para estabilidad
         const aId = a.id || '';
@@ -1143,7 +1212,8 @@ export class KommoDatabaseService {
       limit,
       offset,
       hasMore: offset + limit < totalCount,
-      query: params
+      stats,
+      query: effectiveParams
     };
   }
 }
@@ -1268,5 +1338,10 @@ export interface LogsResponse {
   limit: number;
   offset: number;
   hasMore: boolean;
+  stats: {
+    received_messages: number;
+    change_status: number;
+    bot_actions: number;
+  };
   query: LogsQueryParams;
 }

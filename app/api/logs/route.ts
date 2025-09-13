@@ -18,10 +18,12 @@ function validateAndParseParams(request: NextRequest): LogsQueryParams {
   };
 
   // Función helper para validar números
-  const parseNumber = (value: string | null, defaultValue: number): number => {
+  const parseNumber = (value: string | null, defaultValue: number, allowZero: boolean = false): number => {
     if (!value) return defaultValue;
     const num = parseInt(value, 10);
-    return isNaN(num) ? defaultValue : Math.max(1, Math.min(1000, num)); // Limitar entre 1 y 1000
+    if (isNaN(num)) return defaultValue;
+    const minValue = allowZero ? 0 : 1;
+    return Math.max(minValue, Math.min(1000, num));
   };
 
   // Función helper para validar strings
@@ -66,7 +68,7 @@ function validateAndParseParams(request: NextRequest): LogsQueryParams {
     status: parseString(searchParams.get('status')),
     changedBy: parseString(searchParams.get('changedBy')) as 'bot' | 'manual' | 'system',
     limit: parseNumber(searchParams.get('limit'), 50),
-    offset: parseNumber(searchParams.get('offset'), 0),
+    offset: parseNumber(searchParams.get('offset'), 0, true), // true = permitir 0 para offset
     sortBy: parseString(searchParams.get('sortBy')) as 'timestamp' | 'userName' | 'contactId' | 'type' | 'leadId',
     sortOrder: parseString(searchParams.get('sortOrder')) as 'asc' | 'desc'
   };
