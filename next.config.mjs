@@ -17,7 +17,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Access-Control-Allow-Origin',
-            value: 'http://localhost:3000', // Tu frontend
+            value: process.env.CORS_ORIGIN || 'https://kommo-ai-dashboard.vercel.app/',
           },
           {
             key: 'Access-Control-Allow-Methods',
@@ -25,11 +25,15 @@ const nextConfig = {
           },
           {
             key: 'Access-Control-Allow-Headers',
-            value: 'Content-Type, Authorization',
+            value: 'Content-Type, Authorization, X-Requested-With, Accept, Origin',
           },
           {
             key: 'Access-Control-Allow-Credentials',
             value: 'true',
+          },
+          {
+            key: 'Access-Control-Max-Age',
+            value: '86400', // 24 horas
           },
         ],
       },

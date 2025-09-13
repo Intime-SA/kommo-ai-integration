@@ -183,24 +183,38 @@ const customService = new LogsService('http://localhost:3001/api/logs');
 
 ## 🔐 Configuración de Producción
 
-Para producción, asegúrate de:
+Para producción en Vercel, asegúrate de:
 
-1. **Configurar variables de entorno**:
-```bash
-CORS_ORIGIN=https://tu-dominio.com
-```
+1. **Configurar variables de entorno en Vercel**:
+   - Ve a tu proyecto en Vercel Dashboard
+   - Settings → Environment Variables
+   - Agrega: `CORS_ORIGIN=https://kommo-ai-dashboard.vercel.app/`
 
-2. **Actualizar orígenes permitidos**:
+2. **Verificar orígenes permitidos en middleware.ts**:
 ```typescript
 const allowedOrigins = [
-  'https://tu-frontend.com',
-  'https://tu-app.com',
+  'https://kommo-ai-dashboard.vercel.app/', // Con barra
+  'https://kommo-ai-dashboard.vercel.app',  // Sin barra
+  // ... otros orígenes
 ];
 ```
 
-3. **Configurar credenciales** según necesites:
-```typescript
-credentials: process.env.NODE_ENV === 'production' ? false : true
+3. **El next.config.mjs ya está configurado** para usar `process.env.CORS_ORIGIN` automáticamente.
+
+4. **Redeploy** tu aplicación en Vercel después de agregar las variables de entorno.
+
+### 🚨 Solución Rápida para CORS en Producción
+
+Si sigues teniendo problemas de CORS en producción:
+
+1. **Verifica las variables de entorno en Vercel**
+2. **Revisa los logs de Vercel** para errores de CORS
+3. **Prueba con curl** desde tu servidor de producción:
+```bash
+curl -X OPTIONS "https://tu-app.vercel.app/api/logs" \
+  -H "Origin: https://kommo-ai-dashboard.vercel.app/" \
+  -H "Access-Control-Request-Method: GET" \
+  -v
 ```
 
 ## 🎯 Resumen
