@@ -104,6 +104,13 @@ export interface BotActionDocument {
   createdAt: string; // ISO string en horario Argentina
 }
 
+export interface TokenVisitDocument {
+  _id?: string;
+  token: string;
+  lead: any; // El objeto lead que viene del payload
+  createdAt: string; // ISO string en horario Argentina
+}
+
 // Interfaz para el contexto histórico de un contacto
 export interface ContactContext {
   contactId: string;
@@ -539,6 +546,32 @@ export class KommoDatabaseService {
     const { _id, ...botActionData } = botActionDocument;
     const result = await collection.insertOne(botActionData);
     return { ...botActionDocument, _id: result.insertedId.toString() };
+  }
+
+  // Servicio para crear registro de token visit
+  async createTokenVisit(data: {
+    token: string;
+    lead: any;
+  }): Promise<TokenVisitDocument> {
+    const collection = await this.getCollection('token_visit');
+
+    // Crear nuevo registro de token visit
+    const tokenVisitDocument: TokenVisitDocument = {
+      token: data.token,
+      lead: data.lead,
+      createdAt: getCurrentArgentinaISO(),
+    };
+
+    const { _id, ...tokenVisitData } = tokenVisitDocument;
+    const result = await collection.insertOne(tokenVisitData);
+    return { ...tokenVisitDocument, _id: result.insertedId.toString() };
+  }
+
+  // Servicio para buscar token por valor
+  async findTokenVisit(token: string): Promise<TokenVisitDocument | null> {
+    const collection = await this.getCollection('token_visit');
+    const result = await collection.findOne({ token });
+    return result ? { ...result, _id: result._id.toString() } as TokenVisitDocument : null;
   }
 
   // Servicio para obtener contexto histórico de un contacto (últimas 24 horas)
@@ -1239,6 +1272,84 @@ export const receiveMessage = (data: Parameters<KommoDatabaseService['receiveMes
 
 export const createBotAction = (data: Parameters<KommoDatabaseService['createBotAction']>[0]) =>
   kommoDatabaseService.createBotAction(data);
+
+export const createTokenVisit = (data: Parameters<KommoDatabaseService['createTokenVisit']>[0]) =>
+  kommoDatabaseService.createTokenVisit(data);
+
+export const findTokenVisit = (token: string) =>
+  kommoDatabaseService.findTokenVisit(token);
+
+// Función utilitaria para extraer código de un mensaje
+export function extractCodeFromMessage(messageText: string): string | null {
+  // Patrón para buscar códigos de 8 caracteres alfanuméricos
+  // Busca patrones como "Descuento: ABC12345." o "Código: XYZ78901"
+  const codePattern = /(?:descuento|codigo|código|token)\s*:\s*([A-Za-z0-9]{8})\.?/i;
+  const match = messageText.match(codePattern);
+
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  // También buscar códigos sueltos de 8 caracteres alfanuméricos
+  const looseCodePattern = /\b([A-Za-z0-9]{8})\b/;
+  const looseMatch = messageText.match(looseCodePattern);
+
+  return looseMatch ? looseMatch[1] : null;
+}
+
+// Función para enviar conversión a Meta API
+export async function sendConversionToMeta(leadData: any, accessToken: string, pixelId?: string) {
+  try {
+    // Usar el pixel ID correcto para "ConversacionCRM1"
+    const pixel = pixelId || process.env.META_PIXEL_ID || "1293636532487008";
+
+    const conversionData = {
+      data: [
+        {
+          event_name: "Other", // Evento configurado como "Other" en Meta
+          user_data: {
+            // Datos técnicos requeridos por Meta
+            fbp: leadData.fbp ? [leadData.fbp] : undefined,
+            fbc: leadData.fbc ? [leadData.fbc] : undefined,
+            client_user_agent: leadData.userAgent ? leadData.userAgent : undefined,
+            client_ip_address: leadData.ip ? leadData.ip : undefined,
+          },
+          custom_data: {
+            currency: "ARS",
+            value: leadData.value || "0",
+            content_name: "Conversacion CRM iniciada",
+            custom_event_parameter: "TRUE"
+          },
+        }
+      ],
+      test_event_code: process.env.NODE_ENV === "development" ? "TEST12345" : undefined
+    };
+
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/${pixel}/events?access_token=${accessToken}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(conversionData),
+      }
+    );
+
+    const result = await response.json();
+
+    if (response.ok) {
+      console.log("✅ Conversión enviada exitosamente a Meta:", result);
+      return { success: true, data: result };
+    } else {
+      console.error("❌ Error al enviar conversión a Meta:", result);
+      return { success: false, error: result };
+    }
+  } catch (error) {
+    console.error("❌ Error en sendConversionToMeta:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Error desconocido" };
+  }
+}
 
 export const getContactContext = (contactId: string) =>
   kommoDatabaseService.getContactContext(contactId);

@@ -2,6 +2,8 @@
 const corsConfig = {
   // URLs permitidas para CORS
   allowedOrigins: [
+    'https://c81af03c6bcf.ngrok-free.app',
+    'https://c81af03c6bcf.ngrok-free.app',
     'https://kommo-ai-dashboard.vercel.app',
     'https://kommo-ai-dashboard.vercel.app',
     'http://localhost:3000',  // Frontend típico

@@ -17,7 +17,7 @@ import {
   logWebhookError,
   logLeadStatusChange
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta } from "@/lib/mongodb-services"
 
 export async function POST(request: NextRequest) {
   try {
@@ -449,6 +449,43 @@ export async function POST(request: NextRequest) {
           processed: false,
           message: "Mensaje sin texto - no procesado",
         })
+      }
+
+      // Validar si el mensaje contiene un código
+      const extractedCode = extractCodeFromMessage(message.text)
+      if (extractedCode) {
+        console.log(`🔍 Código detectado en mensaje: ${extractedCode}`)
+
+        try {
+          // Buscar el token en la base de datos
+          const tokenVisit = await findTokenVisit(extractedCode)
+
+          if (tokenVisit) {
+            console.log(`✅ Token encontrado:`, tokenVisit)
+
+            // Enviar conversión a Meta API
+            const metaAccessToken = process.env.META_ACCESS_TOKEN
+            if (!metaAccessToken) {
+              console.error("❌ META_ACCESS_TOKEN no configurado")
+              return NextResponse.json({
+                success: false,
+                processed: false,
+                message: "META_ACCESS_TOKEN no configurado",
+              })
+            }
+            const conversionResult = await sendConversionToMeta(tokenVisit.lead, metaAccessToken)
+
+            if (conversionResult.success) {
+              console.log(`🎉 Conversión enviada exitosamente para código: ${extractedCode}`)
+            } else {
+              console.error(`❌ Error al enviar conversión para código ${extractedCode}:`, conversionResult.error)
+            }
+          } else {
+            console.log(`⚠️ Código no encontrado en base de datos: ${extractedCode}`)
+          }
+        } catch (error) {
+          console.error(`❌ Error al procesar código ${extractedCode}:`, error)
+        }
       }
 
       if (message.talk_id && message.entity_id) {
