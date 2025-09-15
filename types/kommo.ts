@@ -109,6 +109,17 @@ export interface KommoWebhookData {
     }>
   }
   leads?: {
+    add?: Array<{
+      id: string
+      name: string
+      status_id: string
+      responsible_user_id: string
+      created_user_id: string
+      date_create: string
+      pipeline_id: string
+      account_id: string
+      created_at: string
+    }>
     status?: Array<{
       id: string
       name: string

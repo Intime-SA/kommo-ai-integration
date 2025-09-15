@@ -306,9 +306,6 @@ class Logger {
   // Logs específicos para peticiones HTTP
   outgoingHttpRequest(method: string, url: string, headers?: any, body?: any) {
     this.info(`📤 PETICIÓN SALIENTE: ${method} ${url}`)
-    if (headers) {
-      this.debug("Headers enviados", headers)
-    }
     if (body) {
       this.debug("Body enviado", body)
     }

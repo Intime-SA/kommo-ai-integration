@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import type { KommoWebhookData, ProcessedMessage } from "@/types/kommo"
 import { processMessageWithAI } from "@/lib/ai-processor"
-import { updateLeadStatusByName, getCurrentLeadStatus, type KommoApiConfig } from "@/lib/kommo-api"
+import { updateLeadStatusByName, getCurrentLeadStatus } from "@/lib/kommo-api"
 import {
   logWebhookReceived,
   logWebhookParsed,
@@ -17,15 +17,75 @@ import {
   logWebhookError,
   logLeadStatusChange
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent } from "@/lib/mongodb-services"
+import { getLeadInfo, getContactInfo } from "@/lib/kommo-api"
+import type { KommoApiConfig } from "@/lib/kommo-api"
+
+// Función helper para sincronizar lead y contacto desde API de Kommo
+async function syncLeadAndContactFromKommoApi(leadId: string, contactId: string) {
+  try {
+    const config: KommoApiConfig = {
+      subdomain: process.env.KOMMO_SUBDOMAIN || "",
+    }
+
+    if (!config.subdomain) {
+      console.error("❌ KOMMO_SUBDOMAIN no configurado para sincronización")
+      return
+    }
+
+    // Verificar si el lead existe localmente
+    const existingLead = await findLeadById(leadId)
+    let leadData = null
+
+    if (!existingLead) {
+      console.log(`🔄 Lead ${leadId} no existe localmente, obteniendo desde API de Kommo...`)
+      leadData = await getLeadInfo(leadId, config)
+
+      if (leadData) {
+        // Verificar si el contacto existe localmente
+        const existingContact = await findContactById(contactId)
+        let contactData = null
+
+        if (!existingContact) {
+          console.log(`🔄 Contacto ${contactId} no existe localmente, obteniendo desde API de Kommo...`)
+          contactData = await getContactInfo(contactId, config)
+
+          if (contactData) {
+            // Crear contacto
+            await createContactFromKommoApi(contactData)
+          }
+        }
+
+        // Crear lead
+        await createLeadFromKommoApi(leadData, contactData)
+      }
+    } else {
+      console.log(`✅ Lead ${leadId} ya existe localmente`)
+    }
+
+    // Verificar si el contacto existe (por si acaso)
+    const existingContact = await findContactById(contactId)
+    if (!existingContact) {
+      console.log(`🔄 Contacto ${contactId} no existe localmente, obteniendo desde API de Kommo...`)
+      const contactData = await getContactInfo(contactId, config)
+
+      if (contactData) {
+        await createContactFromKommoApi(contactData)
+      }
+    } else {
+      console.log(`✅ Contacto ${contactId} ya existe localmente`)
+    }
+
+  } catch (error) {
+    console.error("❌ Error al sincronizar lead y contacto desde API de Kommo:", error)
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
     // Parse the webhook data
     const body = await request.text()
     logWebhookReceived(body)
-      // Console.log del body completo
-
     
 
     // Parse form data (Kommo sends form-encoded data)
@@ -92,6 +152,20 @@ export async function POST(request: NextRequest) {
           } else {
             ;(webhookData.account as any)[field] = value
           }
+        }
+      }
+
+      if (key.includes("leads[add][0]")) {
+        if (!webhookData.leads) {
+          (webhookData as any).leads = { add: [{ id: "", name: "", status_id: "", responsible_user_id: "", created_user_id: "", date_create: "", pipeline_id: "", account_id: "", created_at: "" }] }
+        }
+        if (!(webhookData as any).leads.add) {
+          (webhookData as any).leads.add = [{ id: "", name: "", status_id: "", responsible_user_id: "", created_user_id: "", date_create: "", pipeline_id: "", account_id: "", created_at: "" }]
+        }
+
+        const field = key.replace("leads[add][0][", "").replace("]", "")
+        if ((webhookData as any).leads.add) {
+          ;((webhookData as any).leads.add[0] as any)[field] = value
         }
       }
 
@@ -299,6 +373,140 @@ export async function POST(request: NextRequest) {
           sourceName: unsortedAdd.source_data?.source_name || ""
         })
 
+        // Procesar código para Meta si existe en el message_text
+        const messageText = unsortedAdd.source_data?.data?.[0]?.text || ""
+        if (messageText.trim() !== "") {
+          const extractedCode = extractCodeFromMessage(messageText)
+          if (extractedCode) {
+            console.log(`🔍 Código detectado en unsorted add: ${extractedCode}`)
+
+            try {
+              // Buscar el token en la base de datos
+              const tokenVisit = await findTokenVisit(extractedCode)
+
+              if (tokenVisit) {
+                console.log(`✅ Token encontrado para unsorted add:`, tokenVisit)
+
+                // Verificar si ya se envió una conversión para este código y tipo de evento en los últimos 30 minutos
+                const conversionAlreadySent = await isConversionAlreadySent(extractedCode, "ConversacionCRM1")
+                if (conversionAlreadySent) {
+                  console.log(`⚠️ Conversión ya enviada para código ${extractedCode} en los últimos 30 minutos - omitiendo envío duplicado`)
+                  return NextResponse.json({
+                    success: true,
+                    processed: false,
+                    message: `Conversión ya enviada para código ${extractedCode}`,
+                    duplicate_conversion: true
+                  })
+                }
+
+                // Enviar conversión a Meta API
+                const metaAccessToken = process.env.META_ACCESS_TOKEN
+                if (!metaAccessToken) {
+                  console.error("❌ META_ACCESS_TOKEN no configurado")
+                  return NextResponse.json({
+                    success: false,
+                    processed: false,
+                    message: "META_ACCESS_TOKEN no configurado",
+                  })
+                }
+
+                const conversionResult = await sendConversionToMeta({
+                  ...tokenVisit.lead,
+                  extractedCode: extractedCode,
+                  eventName: "ConversacionCRM1"
+                }, metaAccessToken)
+
+                // Verificar si la conversión se envió exitosamente (no fue duplicada)
+                if (!conversionResult.success) {
+                  if (conversionResult.error === "DUPLICATE_CONVERSION") {
+                    console.log(`⚠️ Conversión duplicada detectada para unsorted add con código: ${extractedCode}`)
+                    return NextResponse.json({
+                      success: true,
+                      processed: false,
+                      message: `Conversión ya enviada anteriormente para código ${extractedCode}`,
+                      duplicate_conversion: true
+                    })
+                  } else {
+                    console.error(`❌ Error al enviar conversión para unsorted add con código ${extractedCode}:`, conversionResult.error)
+                    return NextResponse.json({
+                      success: false,
+                      processed: false,
+                      message: "Error al enviar conversión",
+                      error: conversionResult.error
+                    })
+                  }
+                }
+
+                // Preparar datos para guardar en send_meta
+                const conversionData = {
+                  data: [
+                    {
+                      event_name: "ConversacionCRM1",
+                      event_time: Math.floor(Date.now() / 1000),
+                      action_source: "website",
+                      event_source_url: tokenVisit.lead.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
+                      user_data: {
+                        client_ip_address: tokenVisit.lead.ip ? tokenVisit.lead.ip : undefined,
+                        client_user_agent: tokenVisit.lead.userAgent ? tokenVisit.lead.userAgent : undefined,
+                        fbp: tokenVisit.lead.fbp ? tokenVisit.lead.fbp : undefined,
+                        fbc: tokenVisit.lead.fbc ? tokenVisit.lead.fbc : undefined,
+                      }
+                    }
+                  ]
+                }
+
+                // Guardar registro en colección send_meta
+                // Array con [0] = ConversacionCRM1
+                const saveResult = await saveSendMetaRecord(
+                  [conversionData],
+                  {
+                    id: unsortedAdd.source_data?.data?.[0]?.id || unsortedAdd.uid,
+                    chatId: unsortedAdd.source_data?.origin?.chat_id || "",
+                    talkId: "",
+                    contactId: unsortedAdd.data?.contacts?.[0]?.id || "",
+                    text: messageText,
+                    createdAt: unsortedAdd.created_at,
+                    elementType: "unsorted",
+                    entityType: "add",
+                    elementId: unsortedAdd.uid,
+                    entityId: unsortedAdd.lead_id,
+                    type: "incoming",
+                    author: {
+                      name: unsortedAdd.source_data?.client?.name || "Unknown",
+                      id: unsortedAdd.source_data?.client?.id || ""
+                    }
+                  },
+                  extractedCode,
+                  [conversionResult]
+                )
+
+                if (saveResult.success) {
+                  console.log(`💾 Registro guardado en send_meta para unsorted add con código: ${extractedCode}`)
+                } else {
+                  console.error(`❌ Error al guardar en send_meta para unsorted add con código ${extractedCode}:`, saveResult.error)
+                }
+
+                if (conversionResult.success) {
+                  console.log(`🎉 Conversión enviada exitosamente para unsorted add con código: ${extractedCode}`)
+
+                  // Sincronizar lead y contacto desde API de Kommo si no existen localmente
+                  const leadId = unsortedAdd.lead_id
+                  const contactId = unsortedAdd.data?.contacts?.[0]?.id
+                  if (leadId && contactId) {
+                    await syncLeadAndContactFromKommoApi(leadId, contactId)
+                  }
+                } else {
+                  console.error(`❌ Error al enviar conversión para unsorted add con código ${extractedCode}:`, conversionResult.error)
+                }
+              } else {
+                console.log(`⚠️ Código no encontrado en base de datos para unsorted add: ${extractedCode}`)
+              }
+            } catch (error) {
+              console.error(`❌ Error al procesar código ${extractedCode} en unsorted add:`, error)
+            }
+          }
+        }
+
         return NextResponse.json({
           success: true,
           processed: true,
@@ -400,6 +608,115 @@ export async function POST(request: NextRequest) {
         leadStatusChange.modified_user_id
       )
 
+      // Verificar si el status cambió a "Cargo" (91366615)
+      if (leadStatusChange.status_id === "91366615") {
+        console.log(`🎯 Lead cambió a status "Cargo" (91366615): ${leadStatusChange.id}`)
+
+        try {
+          // Consultar el lead en la base de datos
+          const leadData = await findLeadById(leadStatusChange.id)
+
+          if (leadData && leadData.meta_data) {
+            console.log(`✅ Lead encontrado con meta_data:`, leadData._id)
+
+            // Extraer datos del meta_data para la conversión
+            const metaData = leadData.meta_data
+            const originalUserData = metaData.conversionData[0].data[0].user_data
+
+            // Crear nueva conversión con event_name "CargoCRM1"
+            const cargoConversionData = {
+              data: [
+                {
+                  event_name: "CargoCRM1", // Evento específico para status "Cargo"
+                  event_time: Math.floor(Date.now() / 1000),
+                  action_source: "website",
+                  event_source_url: metaData.conversionData[0].data[0].event_source_url,
+                  user_data: {
+                    client_ip_address: originalUserData.client_ip_address,
+                    client_user_agent: originalUserData.client_user_agent,
+                    fbp: originalUserData.fbp,
+                    fbc: originalUserData.fbc,
+                  }
+                }
+              ]
+            }
+
+            // Enviar conversión a Meta API
+            const metaAccessToken = process.env.META_ACCESS_TOKEN
+            if (!metaAccessToken) {
+              console.error("❌ META_ACCESS_TOKEN no configurado")
+            } else {
+              const conversionResult = await sendConversionToMeta(
+                {
+                  ip: originalUserData.client_ip_address,
+                  userAgent: originalUserData.client_user_agent,
+                  fbp: originalUserData.fbp,
+                  fbc: originalUserData.fbc,
+                  eventSourceUrl: metaData.conversionData[0].data[0].event_source_url,
+                  extractedCode: metaData.extractedCode,
+                  eventName: "CargoCRM1" // Especificar que es CargoCRM1
+                },
+                metaAccessToken
+              )
+
+              // Verificar si la conversión se envió exitosamente (no fue duplicada)
+              if (!conversionResult.success) {
+                if (conversionResult.error === "DUPLICATE_CONVERSION") {
+                  console.log(`⚠️ Conversión duplicada detectada para CargoCRM1 con código: ${metaData.extractedCode}`)
+                  // No retornar, continuar con el procesamiento
+                } else {
+                  console.error(`❌ Error al enviar conversión CargoCRM1 para código ${metaData.extractedCode}:`, conversionResult.error)
+                }
+              }
+
+              // Preparar datos para guardar en send_meta
+              const messageData = {
+                id: `status_change_${leadStatusChange.id}_${Date.now()}`,
+                chatId: metaData.messageData.chatId,
+                talkId: metaData.messageData.talkId,
+                contactId: leadData.contactId,
+                text: `Status changed to Cargo (${leadStatusChange.status_id})`,
+                createdAt: leadStatusChange.last_modified || new Date().toISOString(),
+                elementType: "lead",
+                entityType: "status_change",
+                elementId: leadStatusChange.id,
+                entityId: leadStatusChange.id,
+                type: "status_change",
+                author: {
+                  name: "System",
+                  id: leadStatusChange.modified_user_id || "system"
+                }
+              }
+
+              // Guardar registro en colección send_meta
+              // Array con [1] = CargoCRM1 (solo cargo, sin conversación previa)
+              const saveResult = await saveSendMetaRecord(
+                [null, cargoConversionData],
+                messageData,
+                metaData.extractedCode, // Usar el mismo código original
+                [null, conversionResult]
+              )
+
+              if (saveResult.success) {
+                console.log(`💾 Registro guardado en send_meta para status change Cargo: ${leadStatusChange.id}`)
+              } else {
+                console.error(`❌ Error al guardar en send_meta para status change ${leadStatusChange.id}:`, saveResult.error)
+              }
+
+              if (conversionResult.success) {
+                console.log(`🎉 Conversión "CargoCRM1" enviada exitosamente para lead: ${leadStatusChange.id}`)
+              } else {
+                console.error(`❌ Error al enviar conversión "CargoCRM1" para lead ${leadStatusChange.id}:`, conversionResult.error)
+              }
+            }
+          } else {
+            console.log(`⚠️ Lead no encontrado o sin meta_data: ${leadStatusChange.id}`)
+          }
+        } catch (error) {
+          console.error(`❌ Error al procesar status change para lead ${leadStatusChange.id}:`, error)
+        }
+      }
+
       return NextResponse.json({
         success: true,
         processed: true,
@@ -413,6 +730,126 @@ export async function POST(request: NextRequest) {
           last_modified: leadStatusChange.last_modified
         },
         message: "Cambio de estado del lead registrado correctamente",
+      })
+    }
+
+    // Process lead add events (when a lead is created with specific status)
+    if ((webhookData as any).leads?.add?.[0]) {
+      const leadAdd = (webhookData as any).leads.add[0]
+
+      // Log the lead creation
+      console.log(`📝 Lead creado con ID: ${leadAdd.id}, Status: ${leadAdd.status_id}`)
+
+      // Verificar si el lead se creó con status "Cargo" (91366615)
+      if (leadAdd.status_id === "91366615") {
+        console.log(`🎯 Lead creado directamente con status "Cargo" (91366615): ${leadAdd.id}`)
+
+        try {
+          // Buscar si este lead ya existe con meta_data (puede haber sido creado por un mensaje anterior)
+          const existingLead = await findLeadById(leadAdd.id)
+
+          if (existingLead && existingLead.meta_data) {
+            console.log(`✅ Lead encontrado con meta_data existente:`, existingLead._id)
+
+            // Extraer datos del meta_data para la conversión
+            const metaData = existingLead.meta_data
+            const originalUserData = metaData.conversionData[0].data[0].user_data
+
+            // Crear nueva conversión con event_name "CargoCRM1"
+            const cargoConversionData = {
+              data: [
+                {
+                  event_name: "CargoCRM1", // Evento específico para status "Cargo"
+                  event_time: Math.floor(Date.now() / 1000),
+                  action_source: "website",
+                  event_source_url: metaData.conversionData[0].data[0].event_source_url,
+                  user_data: {
+                    client_ip_address: originalUserData.client_ip_address,
+                    client_user_agent: originalUserData.client_user_agent,
+                    fbp: originalUserData.fbp,
+                    fbc: originalUserData.fbc,
+                  }
+                }
+              ]
+            }
+
+            // Enviar conversión a Meta API
+            const metaAccessToken = process.env.META_ACCESS_TOKEN
+            if (!metaAccessToken) {
+              console.error("❌ META_ACCESS_TOKEN no configurado")
+            } else {
+              const conversionResult = await sendConversionToMeta(
+                {
+                  ip: originalUserData.client_ip_address,
+                  userAgent: originalUserData.client_userAgent,
+                  fbp: originalUserData.fbp,
+                  fbc: originalUserData.fbc,
+                  eventSourceUrl: metaData.conversionData[0].data[0].event_source_url
+                },
+                metaAccessToken
+              )
+
+              // Preparar datos para guardar en send_meta
+              const messageData = {
+                id: `lead_add_cargo_${leadAdd.id}_${Date.now()}`,
+                chatId: metaData.messageData.chatId,
+                talkId: metaData.messageData.talkId,
+                contactId: existingLead.contactId,
+                text: `Lead created with Cargo status (${leadAdd.status_id})`,
+                createdAt: leadAdd.created_at || new Date().toISOString(),
+                elementType: "lead",
+                entityType: "add",
+                elementId: leadAdd.id,
+                entityId: leadAdd.id,
+                type: "lead_add",
+                author: {
+                  name: "System",
+                  id: leadAdd.created_user_id || "system"
+                }
+              }
+
+              // Guardar registro en colección send_meta
+              // Array con [1] = CargoCRM1 (solo cargo, sin conversación previa)
+              const saveResult = await saveSendMetaRecord(
+                [null, cargoConversionData],
+                messageData,
+                metaData.extractedCode, // Usar el mismo código original
+                [null, conversionResult]
+              )
+
+              if (saveResult.success) {
+                console.log(`💾 Registro guardado en send_meta para lead add Cargo: ${leadAdd.id}`)
+              } else {
+                console.error(`❌ Error al guardar en send_meta para lead add ${leadAdd.id}:`, saveResult.error)
+              }
+
+              if (conversionResult.success) {
+                console.log(`🎉 Conversión "CargoCRM1" enviada exitosamente para lead add: ${leadAdd.id}`)
+              } else {
+                console.error(`❌ Error al enviar conversión "CargoCRM1" para lead add ${leadAdd.id}:`, conversionResult.error)
+              }
+            }
+          } else {
+            console.log(`⚠️ Lead no encontrado con meta_data para ID: ${leadAdd.id} - Puede ser un lead creado sin mensaje previo`)
+          }
+        } catch (error) {
+          console.error(`❌ Error al procesar lead add para lead ${leadAdd.id}:`, error)
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        processed: true,
+        type: "lead_add",
+        lead: {
+          id: leadAdd.id,
+          name: leadAdd.name,
+          status_id: leadAdd.status_id,
+          pipeline_id: leadAdd.pipeline_id,
+          created_by: leadAdd.created_user_id,
+          created_at: leadAdd.created_at
+        },
+        message: "Lead creado correctamente",
       })
     }
 
@@ -454,7 +891,6 @@ export async function POST(request: NextRequest) {
       // Validar si el mensaje contiene un código
       const extractedCode = extractCodeFromMessage(message.text)
       if (extractedCode) {
-        console.log(`🔍 Código detectado en mensaje: ${extractedCode}`)
 
         try {
           // Buscar el token en la base de datos
@@ -463,7 +899,13 @@ export async function POST(request: NextRequest) {
           if (tokenVisit) {
             console.log(`✅ Token encontrado:`, tokenVisit)
 
-            // Enviar conversión a Meta API
+            // Verificar si ya se envió una conversión para este código y tipo de evento en los últimos 30 minutos
+            const conversionAlreadySent = await isConversionAlreadySent(extractedCode, "ConversacionCRM1")
+            if (conversionAlreadySent) {
+              console.log(`⚠️ Conversión ya enviada para código ${extractedCode} en los últimos 30 minutos - omitiendo envío duplicado`)
+              // Continuar con el procesamiento del mensaje (no retornar aquí)
+            } else {
+              // Enviar conversión a Meta API
             const metaAccessToken = process.env.META_ACCESS_TOKEN
             if (!metaAccessToken) {
               console.error("❌ META_ACCESS_TOKEN no configurado")
@@ -473,12 +915,53 @@ export async function POST(request: NextRequest) {
                 message: "META_ACCESS_TOKEN no configurado",
               })
             }
-            const conversionResult = await sendConversionToMeta(tokenVisit.lead, metaAccessToken)
+            const conversionResult = await sendConversionToMeta({
+              ...tokenVisit.lead,
+              extractedCode: extractedCode,
+              eventName: "ConversacionCRM1"
+            }, metaAccessToken)
+
+            // Preparar datos para guardar en send_meta
+            const conversionData = {
+              data: [
+                {
+                  event_name: "ConversacionCRM1",
+                  event_time: Math.floor(Date.now() / 1000),
+                  action_source: "website",
+                  event_source_url: tokenVisit.lead.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
+                  user_data: {
+                    client_ip_address: tokenVisit.lead.ip ? tokenVisit.lead.ip : undefined,
+                    client_user_agent: tokenVisit.lead.userAgent ? tokenVisit.lead.userAgent : undefined,
+                    fbp: tokenVisit.lead.fbp ? tokenVisit.lead.fbp : undefined,
+                    fbc: tokenVisit.lead.fbc ? tokenVisit.lead.fbc : undefined,
+                  }
+                }
+              ]
+            };
+
+            // Guardar registro en colección send_meta
+            // Array con [0] = ConversacionCRM1
+            const saveResult = await saveSendMetaRecord(
+              [conversionData],
+              message,
+              extractedCode,
+              [conversionResult]
+            );
+
+            if (saveResult.success) {
+              console.log(`💾 Registro guardado en send_meta para código: ${extractedCode}`)
+            } else {
+              console.error(`❌ Error al guardar en send_meta para código ${extractedCode}:`, saveResult.error)
+            }
 
             if (conversionResult.success) {
               console.log(`🎉 Conversión enviada exitosamente para código: ${extractedCode}`)
+
+              // Sincronizar lead y contacto desde API de Kommo si no existen localmente
+              await syncLeadAndContactFromKommoApi(message.entity_id, message.contact_id)
             } else {
               console.error(`❌ Error al enviar conversión para código ${extractedCode}:`, conversionResult.error)
+            }
             }
           } else {
             console.log(`⚠️ Código no encontrado en base de datos: ${extractedCode}`)
@@ -489,6 +972,24 @@ export async function POST(request: NextRequest) {
       }
 
       if (message.talk_id && message.entity_id) {
+        // Verificar si el mensaje ya fue procesado por la IA para evitar reprocesamiento
+        const alreadyProcessed = await isMessageAlreadyProcessed(
+          message.talk_id,
+          message.entity_id,
+          message.contact_id,
+          message.text
+        )
+
+        if (alreadyProcessed) {
+          logMessageSkipped(`Mensaje ya procesado anteriormente - ignorando reprocesamiento: ${message.id}`)
+          return NextResponse.json({
+            success: true,
+            processed: false,
+            message: "Mensaje ya procesado anteriormente - no reprocesado",
+            duplicate: true
+          })
+        }
+
         logMessageProcessing(message.text, message.author?.name || "Cliente", message.talk_id, message.entity_id)
 
         // Obtener la configuración de Kommo
@@ -539,6 +1040,7 @@ export async function POST(request: NextRequest) {
           timestamp: new Date(Number.parseInt(message.created_at) * 1000).toISOString(),
           aiDecision,
         }
+        console.log("Processed message:", processedMessage)
 
         logAiDecision(aiDecision, message.talk_id, message.entity_id)
 

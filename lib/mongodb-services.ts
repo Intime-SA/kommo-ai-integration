@@ -20,6 +20,7 @@ export interface UserDocument {
   clientId: string; // client.id del payload
   name: string; // client.name
   contactId: string;
+  phone?: string; // Teléfono extraído de custom_fields
   source: string;
   sourceUid: string;
   sourceName: string;
@@ -1090,24 +1091,158 @@ export class KommoDatabaseService {
   }
 
   /**
+   * Obtiene logs de envío a Meta
+   */
+  async getSendMetaLogs(params: LogsQueryParams): Promise<{ logs: SendMetaLog[], total: number }> {
+    const collection = await this.getCollection('leads');
+
+    // Construir pipeline de agregación para send_meta
+    const pipeline: any[] = [];
+
+    // Filtros de fecha (usar updatedAt que es cuando se actualizó el envío)
+    if (params.startDate || params.endDate) {
+      const dateFilter: any = {};
+      if (params.startDate) dateFilter.$gte = new Date(params.startDate);
+      if (params.endDate) dateFilter.$lte = new Date(params.endDate);
+      pipeline.push({ $match: { updatedAt: dateFilter } });
+    }
+
+    // Filtros adicionales
+    const matchFilter: any = {};
+    const andConditions: any[] = [];
+
+    // Filtros específicos
+    if (params.contactId) andConditions.push({ contactId: params.contactId });
+    if (params.leadId) andConditions.push({ leadId: params.leadId });
+    if (params.userName) andConditions.push({ 'client.name': { $regex: params.userName, $options: 'i' } });
+
+    // Filtro por searchTerm (busca en contactId, leadId, client.name o extractedCode)
+    if (params.searchTerm) {
+      const searchRegex = { $regex: params.searchTerm, $options: 'i' };
+      andConditions.push({
+        $or: [
+          { contactId: searchRegex },
+          { leadId: searchRegex },
+          { 'client.name': searchRegex },
+          { 'meta_data.extractedCode': searchRegex }
+        ]
+      });
+    }
+
+    if (andConditions.length > 0) {
+      if (andConditions.length === 1) {
+        Object.assign(matchFilter, andConditions[0]);
+      } else {
+        matchFilter.$and = andConditions;
+      }
+    }
+
+    if (Object.keys(matchFilter).length > 0) {
+      pipeline.push({ $match: matchFilter });
+    }
+
+    // Lookup para obtener información del usuario/contacto
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'contactId',
+        foreignField: 'contactId',
+        as: 'userInfo'
+      }
+    });
+
+    // Lookup para obtener información del lead
+    pipeline.push({
+      $lookup: {
+        from: 'leads',
+        localField: 'leadId',
+        foreignField: 'leadId',
+        as: 'leadInfo'
+      }
+    });
+
+    // Proyección de los campos necesarios
+    pipeline.push({
+      $project: {
+        id: '$_id',
+        timestamp: { $ifNull: ['$updatedAt', '$createdAt'] },
+        type: { $literal: 'send_meta' },
+        contactId: '$contactId',
+        leadId: '$leadId',
+        talkId: '$talkId',
+        extractedCode: '$meta_data.extractedCode',
+        conversionData: '$meta_data.conversionData',
+        conversionResults: '$meta_data.conversionResults',
+        success: '$meta_data.success',
+        messageText: '$messageText',
+        userName: { $ifNull: [{ $arrayElemAt: ['$userInfo.name', 0] }, '$client.name'] },
+        clientId: { $ifNull: [{ $arrayElemAt: ['$userInfo.clientId', 0] }, '$client.id'] },
+        sourceName: { $ifNull: [{ $arrayElemAt: ['$userInfo.sourceName', 0] }, '$sourceName'] }
+      }
+    });
+
+    // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
+    const sortField = params.sortBy === 'timestamp' ? 'timestamp' :
+                     params.sortBy === 'userName' ? 'userName' :
+                     params.sortBy === 'contactId' ? 'contactId' :
+                     params.sortBy === 'leadId' ? 'leadId' :
+                     params.sortBy === 'extractedCode' ? 'extractedCode' :
+                     params.sortBy === 'type' ? 'type' : 'timestamp';
+    const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+    pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
+
+    // Paginación
+    const limit = params.limit || 50;
+    const offset = params.offset || 0;
+    pipeline.push({ $skip: offset }, { $limit: limit });
+
+    const logs = await collection.aggregate(pipeline).toArray();
+
+    // Contar total usando consulta separada sin paginación
+    const countPipeline = [...pipeline.slice(0, -2), { $count: "total" }]; // Quitar skip y limit
+    const countResult = await collection.aggregate(countPipeline).toArray();
+    const total = countResult.length > 0 ? countResult[0].total : 0;
+
+    return {
+      logs: logs.map((log, index) => ({
+        ...log,
+        index: offset + index + 1,
+        timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : log.timestamp,
+        userName: log.userName || 'Usuario desconocido',
+        clientId: log.clientId || '',
+        sourceName: log.sourceName || '',
+        talkId: log.talkId || '',
+        extractedCode: log.extractedCode || '',
+        conversionData: log.conversionData || [],
+        conversionResults: log.conversionResults || [],
+        success: log.success || false
+      })) as SendMetaLog[],
+      total
+    };
+  }
+
+  /**
    * Obtiene estadísticas de logs por tipo
    */
   async getLogsStats(params: LogsQueryParams): Promise<{
     received_messages: number;
     change_status: number;
     bot_actions: number;
+    send_meta: number;
   }> {
     // Ejecutar consultas en paralelo para obtener conteos por tipo
-    const [messagesCount, statusCount, actionsCount] = await Promise.all([
+    const [messagesCount, statusCount, actionsCount, sendMetaCount] = await Promise.all([
       this.getReceivedMessagesLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0),
       this.getChangeStatusLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0),
-      this.getBotActionsLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0)
+      this.getBotActionsLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0),
+      this.getSendMetaLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0)
     ]);
 
     return {
       received_messages: messagesCount,
       change_status: statusCount,
-      bot_actions: actionsCount
+      bot_actions: actionsCount,
+      send_meta: sendMetaCount
     };
   }
 
@@ -1169,19 +1304,33 @@ export class KommoDatabaseService {
         stats,
         query: effectiveParams
       };
+    } else if (effectiveParams.logType === 'send_meta') {
+      const result = await this.getSendMetaLogs(effectiveParams);
+      // Los logs ya vienen paginados del método individual
+      return {
+        logs: result.logs,
+        total: result.total,
+        limit,
+        offset,
+        hasMore: offset + limit < result.total,
+        stats,
+        query: effectiveParams
+      };
     } else {
       // Consultar todos los tipos y combinar
-      const [messagesResult, statusResult, actionsResult] = await Promise.all([
+      const [messagesResult, statusResult, actionsResult, sendMetaResult] = await Promise.all([
         this.getReceivedMessagesLogs({ ...effectiveParams, limit: 10000, offset: 0 }), // Obtener más para combinar
         this.getChangeStatusLogs({ ...effectiveParams, limit: 10000, offset: 0 }),
-        this.getBotActionsLogs({ ...effectiveParams, limit: 10000, offset: 0 })
+        this.getBotActionsLogs({ ...effectiveParams, limit: 10000, offset: 0 }),
+        this.getSendMetaLogs({ ...effectiveParams, limit: 10000, offset: 0 })
       ]);
 
       // Combinar logs
       const combinedLogs = [
         ...messagesResult.logs,
         ...statusResult.logs,
-        ...actionsResult.logs
+        ...actionsResult.logs,
+        ...sendMetaResult.logs
       ];
 
       // Ordenar según los parámetros especificados con estabilidad (id como criterio secundario)
@@ -1209,6 +1358,10 @@ export class KommoDatabaseService {
             aValue = a.leadId || '';
             bValue = b.leadId || '';
             break;
+          case 'extractedCode':
+            aValue = (a as any).extractedCode || '';
+            bValue = (b as any).extractedCode || '';
+            break;
           default:
             aValue = new Date(a.timestamp).getTime();
             bValue = new Date(b.timestamp).getTime();
@@ -1227,7 +1380,7 @@ export class KommoDatabaseService {
         return 0;
       });
 
-      totalCount = messagesResult.total + statusResult.total + actionsResult.total;
+      totalCount = messagesResult.total + statusResult.total + actionsResult.total + sendMetaResult.total;
     }
 
     // Aplicar paginación al resultado combinado
@@ -1248,6 +1401,51 @@ export class KommoDatabaseService {
       stats,
       query: effectiveParams
     };
+  }
+
+  // Servicio para verificar si un mensaje ya fue procesado por la IA en los últimos 30 minutos
+  async isMessageAlreadyProcessed(talkId: string, entityId: string, contactId: string, messageText: string): Promise<boolean> {
+    const collection = await this.getCollection('bot_actions');
+
+    // Calcular la fecha límite (30 minutos atrás)
+    const thirtyMinutesAgo = new Date();
+    thirtyMinutesAgo.setMinutes(thirtyMinutesAgo.getMinutes() - 30);
+
+    // Buscar si ya existe una acción del bot para este mensaje específico en los últimos 30 minutos
+    const existingBotAction = await collection.findOne({
+      talkId: talkId,
+      entityId: entityId,
+      contactId: contactId,
+      messageText: messageText,
+      createdAt: { $gte: thirtyMinutesAgo.toISOString() }
+    });
+
+    return existingBotAction !== null;
+  }
+
+  // Servicio para verificar si ya se envió una conversión a Meta para este código y tipo de evento en los últimos 30 minutos
+  async isConversionAlreadySent(extractedCode: string, eventName: string): Promise<boolean> {
+    const collection = await this.getCollection('send_meta');
+
+    // Calcular la fecha límite (30 minutos atrás)
+    const thirtyMinutesAgo = new Date();
+    thirtyMinutesAgo.setMinutes(thirtyMinutesAgo.getMinutes() - 30);
+
+    // Buscar si ya existe una conversión enviada para este código y tipo de evento en los últimos 30 minutos
+    const existingConversion = await collection.findOne({
+      extractedCode: extractedCode,
+      timestamp: { $gte: thirtyMinutesAgo },
+      // Verificar si ya existe este tipo de evento en el array conversionData
+      $or: [
+        // Para arrays con estructura antigua (único objeto)
+        { "conversionData.event_name": eventName },
+        // Para arrays con estructura nueva ([0] = ConversacionCRM1, [1] = CargoCRM1)
+        { "conversionData.0.data.0.event_name": eventName },
+        { "conversionData.1.data.0.event_name": eventName }
+      ]
+    });
+
+    return existingConversion !== null;
   }
 }
 
@@ -1279,51 +1477,115 @@ export const createTokenVisit = (data: Parameters<KommoDatabaseService['createTo
 export const findTokenVisit = (token: string) =>
   kommoDatabaseService.findTokenVisit(token);
 
+export const isMessageAlreadyProcessed = (talkId: string, entityId: string, contactId: string, messageText: string) =>
+  kommoDatabaseService.isMessageAlreadyProcessed(talkId, entityId, contactId, messageText);
+
+export const isConversionAlreadySent = (extractedCode: string, eventName: string) =>
+  kommoDatabaseService.isConversionAlreadySent(extractedCode, eventName);
+
+// Función helper para convertir fecha a UTC (restando 3 horas para Argentina)
+function convertToUTC(date: Date): Date {
+  return new Date(date.getTime() - (3 * 60 * 60 * 1000));
+}
+
 // Función utilitaria para extraer código de un mensaje
 export function extractCodeFromMessage(messageText: string): string | null {
-  // Patrón para buscar códigos de 8 caracteres alfanuméricos
-  // Busca patrones como "Descuento: ABC12345." o "Código: XYZ78901"
-  const codePattern = /(?:descuento|codigo|código|token)\s*:\s*([A-Za-z0-9]{8})\.?/i;
+  console.log("Extrayendo código de mensaje:", messageText);
+  // Patrón para buscar códigos generados por nanoid (incluyen guiones y caracteres especiales)
+  // Busca patrones como "Descuento: Nv5M-ilY." o "Código: AbCdEfGh-"
+  const codePattern = /(?:descuento|codigo|código|token)\s*:\s*([A-Za-z0-9_-]{1,21})\.?/i;
   const match = messageText.match(codePattern);
-
+  console.log("Match del patrón principal:", match);
   if (match && match[1]) {
     return match[1];
   }
 
-  // También buscar códigos sueltos de 8 caracteres alfanuméricos
-  const looseCodePattern = /\b([A-Za-z0-9]{8})\b/;
-  const looseMatch = messageText.match(looseCodePattern);
+  // También buscar códigos sueltos generados por nanoid
+  // nanoid por defecto genera 21 caracteres, pero podemos buscar patrones más cortos también
+  const looseCodePatterns = [
+    /\b([A-Za-z0-9_-]{8,21})\b/,  // Códigos de 8-21 caracteres con guiones
+    /\b([A-Za-z0-9_-]{1,21})\b/,  // Códigos de 1-21 caracteres con guiones
+  ];
 
-  return looseMatch ? looseMatch[1] : null;
+  for (const pattern of looseCodePatterns) {
+    const looseMatch = messageText.match(pattern);
+    console.log("Match del patrón suelto:", looseMatch);
+    if (looseMatch && looseMatch[1]) {
+      return looseMatch[1];
+    }
+  }
+
+  return null;
 }
+
+// Función de prueba para verificar la detección de códigos
+
 
 // Función para enviar conversión a Meta API
 export async function sendConversionToMeta(leadData: any, accessToken: string, pixelId?: string) {
   try {
-    // Usar el pixel ID correcto para "ConversacionCRM1"
-    const pixel = pixelId || process.env.META_PIXEL_ID || "1293636532487008";
+    // Determinar el tipo de evento (ConversacionCRM1 por defecto, o el especificado)
+    const eventName = leadData.eventName || "ConversacionCRM1";
+
+    // Usar el pixel ID correcto
+    const pixel = pixelId || process.env.NEXT_PUBLIC_META_PIXEL_ID;
 
     const conversionData = {
       data: [
         {
-          event_name: "Other", // Evento configurado como "Other" en Meta
+          event_name: eventName,
+          event_time: Math.floor(Date.now() / 1000),
+          action_source: "website",
+          event_source_url: leadData.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
           user_data: {
-            // Datos técnicos requeridos por Meta
-            fbp: leadData.fbp ? [leadData.fbp] : undefined,
-            fbc: leadData.fbc ? [leadData.fbc] : undefined,
-            client_user_agent: leadData.userAgent ? leadData.userAgent : undefined,
             client_ip_address: leadData.ip ? leadData.ip : undefined,
-          },
-          custom_data: {
-            currency: "ARS",
-            value: leadData.value || "0",
-            content_name: "Conversacion CRM iniciada",
-            custom_event_parameter: "TRUE"
-          },
+            client_user_agent: leadData.userAgent ? leadData.userAgent : undefined,
+            fbp: leadData.fbp ? leadData.fbp : undefined,
+            fbc: leadData.fbc ? leadData.fbc : undefined,
+          }
         }
-      ],
-      test_event_code: process.env.NODE_ENV === "development" ? "TEST12345" : undefined
+      ]
     };
+
+    console.log(`Conversion data para ${eventName}:`, conversionData);
+    console.log("Conversion data.user_data:", conversionData.data[0].user_data);
+
+    // VERIFICAR EN BASE DE DATOS ANTES DE ENVIAR
+    // Necesitamos el código para verificar duplicados
+    const extractedCode = leadData.extractedCode;
+    if (extractedCode) {
+      console.log(`🔍 Verificando en DB si ya existe tracking de ${eventName} para código ${extractedCode}`);
+
+      const client = await clientPromise;
+      const db = client.db(process.env.MONGODB_DATABASE || "kommo");
+      const collection = db.collection("send_meta");
+
+      // Buscar si ya existe una conversión enviada para este código y tipo de evento
+      const existingConversion = await collection.findOne({
+        extractedCode: extractedCode,
+        // Verificar si ya existe este tipo de evento en el array conversionData
+        $or: [
+          // Para arrays con estructura antigua (único objeto)
+          { "conversionData.event_name": eventName },
+          // Para arrays con estructura nueva ([0] = ConversacionCRM1, [1] = CargoCRM1)
+          { "conversionData.0.data.0.event_name": eventName },
+          { "conversionData.1.data.0.event_name": eventName },
+          // También verificar en conversionResults si existe el evento
+          { "conversionResults.event_name": eventName }
+        ]
+      });
+
+      if (existingConversion) {
+        console.log(`⚠️ Conversión ${eventName} ya existe en DB para código ${extractedCode}, omitiendo envío duplicado`);
+        return {
+          success: false,
+          error: "DUPLICATE_CONVERSION",
+          message: `Conversión ya enviada anteriormente para código ${extractedCode}`
+        };
+      }
+
+      console.log(`✅ No se encontró conversión previa para ${eventName} código ${extractedCode}, procediendo con envío`);
+    }
 
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${pixel}/events?access_token=${accessToken}`,
@@ -1351,6 +1613,288 @@ export async function sendConversionToMeta(leadData: any, accessToken: string, p
   }
 }
 
+// Función para guardar envío a Meta en colección send_meta
+export async function saveSendMetaRecord(
+  conversionDataArray: any[],
+  messageData: any,
+  extractedCode: string,
+  conversionResults: any[]
+) {
+  try {
+    const client = await clientPromise;
+    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
+    const collection = db.collection("send_meta");
+
+    // Crear timestamp en UTC
+    const utcTimestamp = convertToUTC(new Date());
+
+    // Buscar si ya existe un registro para este código
+    const existingRecord = await collection.findOne({ extractedCode: extractedCode });
+
+    if (existingRecord) {
+      // Si existe, hacer push/update del array existente
+      console.log(`🔄 Actualizando registro existente para código: ${extractedCode}`);
+
+      // Combinar los arrays existentes con los nuevos
+      const updatedConversionData = [...(existingRecord.conversionData || [])];
+      const updatedConversionResults = [...(existingRecord.conversionResults || [])];
+
+      // Actualizar las posiciones del array
+      conversionDataArray.forEach((data, index) => {
+        if (data !== null) {
+          updatedConversionData[index] = data;
+        }
+      });
+
+      conversionResults.forEach((result, index) => {
+        if (result !== null) {
+          updatedConversionResults[index] = result;
+        }
+      });
+
+      const updateData = {
+        conversionData: updatedConversionData,
+        conversionResults: updatedConversionResults,
+        timestamp: utcTimestamp,
+        success: updatedConversionResults.some(result => result && result.success),
+        // Actualizar messageData si viene de un evento diferente
+        ...(messageData && { messageData: {
+          id: messageData.id,
+          chatId: messageData.chat_id || messageData.chatId,
+          talkId: messageData.talk_id || messageData.talkId,
+          contactId: messageData.contact_id || messageData.contactId,
+          text: messageData.text,
+          createdAt: messageData.created_at || messageData.createdAt,
+          elementType: messageData.element_type || messageData.elementType,
+          entityType: messageData.entity_type || messageData.entityType,
+          elementId: messageData.element_id || messageData.elementId,
+          entityId: messageData.entity_id || messageData.entityId,
+          type: messageData.type,
+          author: messageData.author
+        }})
+      };
+
+      const result = await collection.updateOne(
+        { extractedCode: extractedCode },
+        { $set: updateData }
+      );
+
+      console.log("✅ Registro actualizado en send_meta:", existingRecord._id);
+
+      // Actualizar el lead correspondiente con meta_data actualizada
+      if (messageData?.entityId || existingRecord.messageData?.entityId) {
+        const entityId = messageData?.entityId || existingRecord.messageData?.entityId;
+        const leadsCollection = db.collection("leads");
+
+        // Obtener el registro actualizado para guardar en meta_data
+        const updatedRecord = await collection.findOne({ extractedCode: extractedCode });
+
+        const updateResult = await leadsCollection.updateOne(
+          { leadId: entityId },
+          {
+            $set: {
+              meta_data: updatedRecord,
+              updatedAt: utcTimestamp
+            }
+          }
+        );
+
+        if (updateResult.matchedCount > 0) {
+          console.log(`✅ Lead actualizado con meta_data para entityId: ${entityId}`);
+        } else {
+          console.log(`⚠️ No se encontró lead con entityId: ${entityId}`);
+        }
+      }
+
+      return { success: true, updatedId: existingRecord._id };
+    } else {
+      // Si no existe, crear nuevo registro
+      const record = {
+        // Array de datos de conversiones enviadas a Meta
+        // [0] = ConversacionCRM1, [1] = CargoCRM1
+        conversionData: conversionDataArray,
+        // Datos del mensaje que disparó la conversión
+        messageData: {
+          id: messageData.id,
+          chatId: messageData.chat_id || messageData.chatId,
+          talkId: messageData.talk_id || messageData.talkId,
+          contactId: messageData.contact_id || messageData.contactId,
+          text: messageData.text,
+          createdAt: messageData.created_at || messageData.createdAt,
+          elementType: messageData.element_type || messageData.elementType,
+          entityType: messageData.entity_type || messageData.entityType,
+          elementId: messageData.element_id || messageData.elementId,
+          entityId: messageData.entity_id || messageData.entityId,
+          type: messageData.type,
+          author: messageData.author
+        },
+        // Información adicional
+        extractedCode: extractedCode,
+        conversionResults: conversionResults,
+        timestamp: utcTimestamp,
+        success: conversionResults.some(result => result && result.success)
+      };
+
+      const result = await collection.insertOne(record);
+      console.log("✅ Registro creado en send_meta:", result.insertedId);
+
+      // Actualizar el lead correspondiente agregando meta_data
+      if (record.messageData.entityId) {
+        const leadsCollection = db.collection("leads");
+        const updateResult = await leadsCollection.updateOne(
+          { leadId: record.messageData.entityId },
+          {
+            $set: {
+              meta_data: record,
+              updatedAt: utcTimestamp
+            }
+          }
+        );
+
+        if (updateResult.matchedCount > 0) {
+          console.log(`✅ Lead actualizado con meta_data para entityId: ${record.messageData.entityId}`);
+        } else {
+          console.log(`⚠️ No se encontró lead con entityId: ${record.messageData.entityId}`);
+        }
+      }
+
+      return { success: true, insertedId: result.insertedId };
+    }
+  } catch (error) {
+    console.error("❌ Error al guardar en send_meta:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Error desconocido"
+    };
+  }
+}
+
+// Función para buscar lead por ID
+export async function findLeadById(leadId: string) {
+  try {
+    const client = await clientPromise;
+    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
+    const collection = db.collection("leads");
+
+    const lead = await collection.findOne({ leadId: leadId });
+    return lead;
+  } catch (error) {
+    console.error("❌ Error al buscar lead por ID:", error);
+    return null;
+  }
+}
+
+export async function findContactById(contactId: string) {
+  try {
+    const client = await clientPromise;
+    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
+    const collection = db.collection("users");
+
+    const contact = await collection.findOne({ contactId: contactId });
+    return contact;
+  } catch (error) {
+    console.error("❌ Error al buscar contacto por ID:", error);
+    return null;
+  }
+}
+
+// Función para crear lead desde datos de la API de Kommo
+export async function createLeadFromKommoApi(kommoLeadData: any, kommoContactData?: any) {
+  try {
+    const client = await clientPromise;
+    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
+    const collection = db.collection("leads");
+
+    const leadId = kommoLeadData.id.toString();
+
+    // Verificar si ya existe un lead con este leadId
+    const existingLead = await collection.findOne({ leadId: leadId });
+    if (existingLead) {
+      console.log(`⚠️ Lead ${leadId} ya existe localmente, omitiendo creación duplicada`);
+      return existingLead;
+    }
+
+    // Obtener el contactId real del lead
+    const realContactId = kommoLeadData._embedded?.contacts?.[0]?.id?.toString() || kommoContactData?.id?.toString() || "unknown";
+
+    const leadDocument: LeadDocument = {
+      uid: `lead_${kommoLeadData.id}_${Date.now()}`,
+      source: "kommo_api",
+      sourceUid: kommoLeadData.id.toString(),
+      category: "api_sync",
+      leadId: leadId,
+      contactId: realContactId,
+      pipelineId: kommoLeadData.pipeline_id?.toString() || "",
+      createdAt: convertToArgentinaISO(kommoLeadData.created_at),
+      client: {
+        name: kommoContactData?.name || kommoLeadData.name || "Unknown",
+        id: realContactId
+      },
+      messageText: `Lead sincronizado desde API: ${kommoLeadData.name}`,
+      sourceName: "kommo_api_sync",
+      updatedAt: convertToArgentinaISO(kommoLeadData.updated_at || kommoLeadData.created_at)
+    };
+
+    const { _id, ...leadData } = leadDocument;
+    const result = await collection.insertOne(leadData);
+    console.log("✅ Lead creado desde API de Kommo:", result.insertedId);
+    return leadDocument;
+  } catch (error) {
+    console.error("❌ Error al crear lead desde API de Kommo:", error);
+    return null;
+  }
+}
+
+// Función para crear contacto desde datos de la API de Kommo
+export async function createContactFromKommoApi(kommoContactData: any) {
+  try {
+    const client = await clientPromise;
+    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
+    const collection = db.collection("users");
+
+    // Extraer teléfono del campo personalizado PHONE
+    let phone = "";
+    if (kommoContactData.custom_fields_values) {
+      const phoneField = kommoContactData.custom_fields_values.find(
+        (field: any) => field.field_code === "PHONE"
+      );
+      if (phoneField && phoneField.values && phoneField.values.length > 0) {
+        phone = phoneField.values[0].value || "";
+      }
+    }
+
+    const contactId = kommoContactData.id.toString();
+
+    // Verificar si ya existe un contacto con este contactId
+    const existingContact = await collection.findOne({ contactId: contactId });
+    if (existingContact) {
+      console.log(`⚠️ Contacto ${contactId} ya existe localmente, omitiendo creación duplicada`);
+      return existingContact;
+    }
+
+    const userDocument: UserDocument = {
+      clientId: phone,
+      name: kommoContactData.name || "Unknown",
+      contactId: contactId,
+      phone: phone, // Agregar teléfono extraído
+      source: "kommo_api",
+      sourceUid: kommoContactData.id.toString(),
+      sourceName: "kommo_api",
+      messageText: `Contacto sincronizado desde API: ${kommoContactData.name}`,
+      createdAt: convertToArgentinaISO(kommoContactData.created_at),
+      updatedAt: convertToArgentinaISO(kommoContactData.updated_at || kommoContactData.created_at)
+    };
+
+    const { _id, ...userData } = userDocument;
+    const result = await collection.insertOne(userData);
+    console.log("✅ Contacto creado desde API de Kommo:", result.insertedId);
+    return userDocument;
+  } catch (error) {
+    console.error("❌ Error al crear contacto desde API de Kommo:", error);
+    return null;
+  }
+}
+
 export const getContactContext = (contactId: string) =>
   kommoDatabaseService.getContactContext(contactId);
 
@@ -1364,12 +1908,15 @@ export const getChangeStatusLogs = (params: LogsQueryParams) =>
 export const getBotActionsLogs = (params: LogsQueryParams) =>
   kommoDatabaseService.getBotActionsLogs(params);
 
+export const getSendMetaLogs = (params: LogsQueryParams) =>
+  kommoDatabaseService.getSendMetaLogs(params);
+
 export const getConsolidatedLogs = (params: LogsQueryParams) =>
   kommoDatabaseService.getConsolidatedLogs(params);
 
 // ===== TIPOS PARA LOGS CONSOLIDADOS =====
 
-export type LogType = 'received_messages' | 'change_status' | 'bot_actions';
+export type LogType = 'received_messages' | 'change_status' | 'bot_actions' | 'send_meta';
 
 export interface BaseLogEntry {
   index: number;
@@ -1420,7 +1967,33 @@ export interface BotActionLog extends BaseLogEntry {
   processingTime: number; // en ms
 }
 
-export type LogEntry = ReceivedMessageLog | ChangeStatusLog | BotActionLog;
+export interface SendMetaLog extends BaseLogEntry {
+  type: 'send_meta';
+  extractedCode: string;
+  conversionData: Array<{
+    data: Array<{
+      event_name: string;
+      event_time: number;
+      action_source: string;
+      event_source_url: string;
+      user_data: {
+        client_ip_address: string;
+        client_user_agent: string;
+        fbp: string;
+        fbc: string;
+      };
+    }>;
+  }>;
+  conversionResults: Array<{
+    success: boolean;
+    error?: string;
+    message?: string;
+    data?: any;
+  }>;
+  success: boolean;
+}
+
+export type LogEntry = ReceivedMessageLog | ChangeStatusLog | BotActionLog | SendMetaLog;
 
 // Parámetros de consulta para logs
 export interface LogsQueryParams {
@@ -1438,7 +2011,7 @@ export interface LogsQueryParams {
   changedBy?: 'bot' | 'manual' | 'system';
   limit?: number;
   offset?: number;
-    sortBy?: 'timestamp' | 'userName' | 'contactId' | 'type' | 'leadId';
+    sortBy?: 'timestamp' | 'userName' | 'contactId' | 'type' | 'leadId' | 'extractedCode';
   sortOrder?: 'asc' | 'desc';
 }
 
@@ -1453,6 +2026,7 @@ export interface LogsResponse {
     received_messages: number;
     change_status: number;
     bot_actions: number;
+    send_meta: number;
   };
   query: LogsQueryParams;
 }

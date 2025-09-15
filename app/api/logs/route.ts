@@ -110,7 +110,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<LogsRespon
 
   try {
     // Log de la petición
-    logOutgoingHttpRequest('GET', '/api/logs', {}, Object.fromEntries(new URL(request.url).searchParams));
+    /* logOutgoingHttpRequest('GET', '/api/logs', {}, Object.fromEntries(new URL(request.url).searchParams)); */
 
     // Validar y parsear parámetros
     const params = validateAndParseParams(request);
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<{ message
 
   try {
     // Log de la petición
-    logOutgoingHttpRequest('POST', '/api/logs', {}, {});
+    /* logOutgoingHttpRequest('POST', '/api/logs', {}, {}); */
 
     // Este endpoint podría usarse para crear logs manuales si es necesario
     // Por ahora, devolver que no está implementado

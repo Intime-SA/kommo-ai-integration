@@ -95,6 +95,42 @@ export async function getLeadInfo(leadId: string, config: KommoApiConfig): Promi
   }
 }
 
+export async function getContactInfo(contactId: string, config: KommoApiConfig): Promise<any> {
+  const startTime = Date.now()
+  const url = `https://${config.subdomain}.kommo.com/api/v4/contacts/${contactId}`
+
+  try {
+    // Log de petición saliente
+    logOutgoingHttpRequest("GET", url, {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+    })
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+      },
+    })
+
+    const responseTime = Date.now() - startTime
+    const responseText = await response.text()
+
+    // Log de respuesta
+    logIncomingHttpResponse(response.status, response.statusText, responseText, responseTime)
+
+    if (!response.ok) {
+      throw new Error(`Failed to get contact info: ${response.status} ${response.statusText} - ${responseText}`)
+    }
+
+    const result = JSON.parse(responseText)
+    return result
+  } catch (error) {
+    const responseTime = Date.now() - startTime
+    logHttpError("getContactInfo", error, url)
+    logKommoApiError("getContactInfo", error)
+    return null
+  }
+}
+
 // Pipeline configuration
 export const PIPELINE_CONFIG = {
   id: "11862040",
