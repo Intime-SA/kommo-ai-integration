@@ -2,8 +2,8 @@
 const corsConfig = {
   // URLs permitidas para CORS
   allowedOrigins: [
-    'https://guba-redirect.vercel.app/',
-    'https://kommo-ai-dashboard.vercel.app/',
+    'https://guba-redirect.vercel.app',
+    'https://kommo-ai-dashboard.vercel.app',
     'https://c81af03c6bcf.ngrok-free.app',
     'https://c81af03c6bcf.ngrok-free.app',
     'https://kommo-ai-dashboard.vercel.app',
