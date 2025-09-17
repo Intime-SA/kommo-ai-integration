@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 
 // Lista de orígenes permitidos
 const allowedOrigins = [
+  'https://redirect-tee-1.vercel.app',
   'https://guba-redirect.vercel.app',
   'https://c81af03c6bcf.ngrok-free.app',
   'https://kommo-ai-dashboard.vercel.app',
