@@ -112,6 +112,16 @@ export interface TokenVisitDocument {
   createdAt: string; // ISO string en horario Argentina
 }
 
+// Interface para documentos de settings
+export interface SettingsDocument {
+  _id?: string;
+  accountCBU: string;
+  context: string;
+  message: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // Interfaz para el contexto histórico de un contacto
 export interface ContactContext {
   contactId: string;
@@ -1447,6 +1457,77 @@ export class KommoDatabaseService {
 
     return existingConversion !== null;
   }
+
+  // ===== MÉTODOS PARA SETTINGS =====
+
+  /**
+   * Obtener todos los documentos de settings
+   */
+  async getAllSettings(): Promise<SettingsDocument[]> {
+    const collection = await this.getCollection('settings');
+    const settings = await collection.find({}).toArray();
+
+    return settings.map(setting => ({
+      _id: setting._id.toString(),
+      accountCBU: setting.accountCBU,
+      context: setting.context,
+      message: setting.message,
+      createdAt: setting.createdAt,
+      updatedAt: setting.updatedAt
+    })) as SettingsDocument[];
+  }
+
+  /**
+   * Obtener un documento de settings por ID
+   */
+  async getSettingsById(id: string): Promise<SettingsDocument | null> {
+    const collection = await this.getCollection('settings');
+    const setting = await collection.findOne({ _id: new ObjectId(id) });
+
+    if (!setting) return null;
+
+    return {
+      _id: setting._id.toString(),
+      accountCBU: setting.accountCBU,
+      context: setting.context,
+      message: setting.message,
+      createdAt: setting.createdAt,
+      updatedAt: setting.updatedAt
+    } as SettingsDocument;
+  }
+
+  /**
+   * Actualizar un documento de settings por ID
+   */
+  async updateSettingsById(id: string, updateData: Partial<Omit<SettingsDocument, '_id'>>): Promise<SettingsDocument | null> {
+    const collection = await this.getCollection('settings');
+
+    const updateDoc = {
+      ...updateData,
+      updatedAt: getCurrentArgentinaISO(),
+    };
+
+    try {
+      const result = await collection.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        { $set: updateDoc },
+        { returnDocument: 'after' }
+      );
+
+      if (!result) return null;
+
+      return {
+        _id: result._id.toString(),
+        accountCBU: result.accountCBU,
+        context: result.context,
+        message: result.message,
+        createdAt: result.createdAt,
+        updatedAt: result.updatedAt
+      } as SettingsDocument;
+    } catch (error) {
+      return null;
+    }
+  }
 }
 
 // Instancia singleton del servicio
@@ -1897,6 +1978,16 @@ export async function createContactFromKommoApi(kommoContactData: any) {
 
 export const getContactContext = (contactId: string) =>
   kommoDatabaseService.getContactContext(contactId);
+
+// Funciones de conveniencia para settings
+export const getAllSettings = () =>
+  kommoDatabaseService.getAllSettings();
+
+export const getSettingsById = (id: string) =>
+  kommoDatabaseService.getSettingsById(id);
+
+export const updateSettingsById = (id: string, updateData: Partial<Omit<SettingsDocument, '_id'>>) =>
+  kommoDatabaseService.updateSettingsById(id, updateData);
 
 // Funciones de conveniencia para logs
 export const getReceivedMessagesLogs = (params: LogsQueryParams) =>
