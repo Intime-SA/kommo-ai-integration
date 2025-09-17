@@ -107,6 +107,7 @@ export async function processMessageWithAI(
   currentStatus: LeadStatus,
   talkId: string,
   contactContext?: ContactContext,
+  rules?: Array<{ priority: number; rule: string }>,
 ): Promise<AIDecision> {
   const systemMessage = `Eres un asistente de IA especializado en clasificar mensajes de clientes potenciales en un CRM (Kommo).
 
@@ -149,6 +150,9 @@ El status "Cargo" SOLO puede ser establecido por procesos manuales o sistemas ex
 - Cliente dice: "No voy a cargar nada, chau" → newStatus = "NoCargo"
 - Cliente insulta o hace chistes sin sentido → newStatus = "NoAtender"
 - Cliente envía comprobante de transferencia → **NO CAMBIAR A "Cargo"** → cambiar a "Revisar" para verificación manual
+
+📋 REGLAS DINÁMICAS (ordenadas por prioridad):
+${rules ? rules.map(r => `• Prioridad ${r.priority}: ${r.rule}`).join('\n') : 'No hay reglas adicionales configuradas'}
 `
 
   const prompt = `

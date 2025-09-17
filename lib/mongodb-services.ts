@@ -1,4 +1,4 @@
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import clientPromise from './mongodb';
 
 // Función helper para obtener fecha hace N horas
@@ -2029,4 +2029,283 @@ export interface LogsResponse {
     send_meta: number;
   };
   query: LogsQueryParams;
+}
+
+// ===== INTERFACES PARA RULES =====
+
+// Interface para documentos de reglas
+export interface RuleDocument {
+  _id?: string | ObjectId;
+  createdAt: string; // ISO string en horario Argentina
+  updatedAt: string; // ISO string en horario Argentina
+  rule: string; // Número o identificador de la regla
+  text: string; // Texto descriptivo de la regla
+  crm: string; // Sistema CRM utilizado
+  pipeline: string; // Pipeline donde se aplica
+  priority: number; // Prioridad de la regla
+  status: 'active' | 'inactive' | 'draft'; // Estado de la regla
+}
+
+// Parámetros de consulta para rules
+export interface RulesQueryParams {
+  startDate?: string;
+  endDate?: string;
+  rule?: string;
+  text?: string;
+  crm?: string;
+  pipeline?: string;
+  status?: 'active' | 'inactive' | 'draft';
+  priority?: number;
+  limit?: number;
+  offset?: number;
+  sortBy?: 'createdAt' | 'updatedAt' | 'rule' | 'priority' | 'status';
+  sortOrder?: 'asc' | 'desc';
+}
+
+// Respuesta del endpoint de rules
+export interface RulesResponse {
+  rules: RuleDocument[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  query: RulesQueryParams;
+}
+
+// ===== FUNCIONES CRUD PARA RULES =====
+
+/**
+ * Crear una nueva regla
+ */
+export async function createRule(ruleData: Omit<RuleDocument, '_id' | 'createdAt' | 'updatedAt'>): Promise<RuleDocument> {
+  const client = await clientPromise;
+  const db = client.db('kommo');
+  const collection = db.collection<RuleDocument>('rules');
+
+  const now = new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString();
+  const ruleDocument: Omit<RuleDocument, '_id'> = {
+    ...ruleData,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const result = await collection.insertOne(ruleDocument);
+  return {
+    _id: result.insertedId.toString(),
+    ...ruleDocument,
+  };
+}
+
+/**
+ * Obtener todas las reglas con filtros opcionales
+ */
+export async function getRules(params: RulesQueryParams = {}): Promise<RulesResponse> {
+  const client = await clientPromise;
+  const db = client.db('kommo');
+  const collection = db.collection<RuleDocument>('rules');
+
+  // Construir query de filtrado
+  const query: any = {};
+
+  if (params.startDate || params.endDate) {
+    query.createdAt = {};
+    if (params.startDate) query.createdAt.$gte = params.startDate;
+    if (params.endDate) query.createdAt.$lte = params.endDate;
+  }
+
+  if (params.rule) query.rule = { $regex: params.rule, $options: 'i' };
+  if (params.text) query.text = { $regex: params.text, $options: 'i' };
+  if (params.crm) query.crm = params.crm;
+  if (params.pipeline) query.pipeline = params.pipeline;
+  if (params.status) query.status = params.status;
+  if (params.priority !== undefined) query.priority = params.priority;
+
+  // Paginación
+  const limit = params.limit || 50;
+  const offset = params.offset || 0;
+
+  // Ordenamiento
+  const sortBy = params.sortBy || 'createdAt';
+  const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+  const sort: any = {};
+  sort[sortBy] = sortOrder;
+
+  // Ejecutar consulta
+  const total = await collection.countDocuments(query);
+  const rules = await collection
+    .find(query)
+    .sort(sort)
+    .skip(offset)
+    .limit(limit)
+    .toArray();
+
+  const hasMore = offset + limit < total;
+
+  return {
+    rules,
+    total,
+    limit,
+    offset,
+    hasMore,
+    query: params,
+  };
+}
+
+/**
+ * Obtener una regla por ID
+ */
+export async function getRuleById(id: string): Promise<RuleDocument | null> {
+  const client = await clientPromise;
+  const db = client.db('kommo');
+  const collection = db.collection<RuleDocument>('rules');
+
+  try {
+    const rule = await collection.findOne({ _id: new ObjectId(id) });
+    return rule;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Obtener una regla por número de regla
+ */
+export async function getRuleByRuleNumber(ruleNumber: string): Promise<RuleDocument | null> {
+  const client = await clientPromise;
+  const db = client.db('kommo');
+  const collection = db.collection<RuleDocument>('rules');
+
+  return await collection.findOne({ rule: ruleNumber });
+}
+
+/**
+ * Actualizar una regla por ID
+ */
+export async function updateRule(id: string, updateData: Partial<Omit<RuleDocument, '_id' | 'createdAt'>>): Promise<RuleDocument | null> {
+  const client = await clientPromise;
+  const db = client.db('kommo');
+  const collection = db.collection<RuleDocument>('rules');
+
+  const updateDoc = {
+    ...updateData,
+    updatedAt: new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString(),
+  };
+
+  try {
+    const result = await collection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $set: updateDoc },
+      { returnDocument: 'after' }
+    );
+    return result;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Actualizar una regla por número de regla
+ */
+export async function updateRuleByRuleNumber(ruleNumber: string, updateData: Partial<Omit<RuleDocument, '_id' | 'createdAt'>>): Promise<RuleDocument | null> {
+  const client = await clientPromise;
+  const db = client.db('kommo');
+  const collection = db.collection<RuleDocument>('rules');
+
+  const updateDoc = {
+    ...updateData,
+    updatedAt: new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString(),
+  };
+
+  const result = await collection.findOneAndUpdate(
+    { rule: ruleNumber },
+    { $set: updateDoc },
+    { returnDocument: 'after' }
+  );
+
+  return result;
+}
+
+/**
+ * Eliminar una regla por ID
+ */
+export async function deleteRule(id: string): Promise<boolean> {
+  const client = await clientPromise;
+  const db = client.db('kommo');
+  const collection = db.collection<RuleDocument>('rules');
+
+  try {
+    const result = await collection.deleteOne({ _id: new ObjectId(id) });
+    return result.deletedCount > 0;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Eliminar una regla por número de regla
+ */
+export async function deleteRuleByRuleNumber(ruleNumber: string): Promise<boolean> {
+  const client = await clientPromise;
+  const db = client.db('kommo');
+  const collection = db.collection<RuleDocument>('rules');
+
+  const result = await collection.deleteOne({ rule: ruleNumber });
+  return result.deletedCount > 0;
+}
+
+/**
+ * Obtener reglas por CRM
+ */
+export async function getRulesByCrm(crm: string, params: Partial<RulesQueryParams> = {}): Promise<RulesResponse> {
+  return getRules({
+    crm,
+    limit: 50,
+    sortBy: 'priority',
+    sortOrder: 'desc',
+    ...params,
+  });
+}
+
+/**
+ * Obtener reglas por pipeline
+ */
+export async function getRulesByPipeline(pipeline: string, params: Partial<RulesQueryParams> = {}): Promise<RulesResponse> {
+  return getRules({
+    pipeline,
+    limit: 50,
+    sortBy: 'priority',
+    sortOrder: 'desc',
+    ...params,
+  });
+}
+
+/**
+ * Normalizar reglas para uso en AI (solo priority y rule)
+ */
+export function normalizeRulesForAI(rules: RuleDocument[]): Array<{ priority: number; rule: string }> {
+  return rules.map(rule => ({
+    priority: rule.priority,
+    rule: rule.rule
+  }))
+}
+
+/**
+ * Obtener reglas activas
+ */
+export async function getActiveRules(params: Partial<RulesQueryParams> = {}): Promise<RulesResponse> {
+  return getRules({
+    status: 'active',
+    limit: 50,
+    sortBy: 'priority',
+    sortOrder: 'desc',
+    ...params,
+  });
+}
+
+/**
+ * Obtener reglas activas normalizadas para AI
+ */
+export async function getActiveRulesForAI(params: Partial<RulesQueryParams> = {}): Promise<Array<{ priority: number; rule: string }>> {
+  const response = await getActiveRules(params)
+  return normalizeRulesForAI(response.rules)
 }

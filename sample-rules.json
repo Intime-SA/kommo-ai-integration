@@ -1,0 +1,172 @@
+[
+  {
+    "createdAt": "2024-09-17T12:00:00.000Z",
+    "updatedAt": "2024-09-17T12:00:00.000Z",
+    "rule": "1",
+    "text": "Analiza siempre el contenido literal del mensaje, pero también el contexto del status actual del Lead.",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 10,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:05:00.000Z",
+    "updatedAt": "2024-09-17T12:05:00.000Z",
+    "rule": "2",
+    "text": "Solo cambia el status si hay una razón clara y específica en el mensaje (ejemplo: pide usuario, pide CBU).",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 9,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:10:00.000Z",
+    "updatedAt": "2024-09-17T12:10:00.000Z",
+    "rule": "3",
+    "text": "Si el mensaje no aporta información nueva, mantiene el status actual.",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 8,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:15:00.000Z",
+    "updatedAt": "2024-09-17T12:15:00.000Z",
+    "rule": "4",
+    "text": "El status \"Revisar\" es un comodín para consultas fuera del flujo automático: dudas, preguntas generales, etc.",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 7,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:20:00.000Z",
+    "updatedAt": "2024-09-17T12:20:00.000Z",
+    "rule": "5",
+    "text": "El status \"NoCargo\" se aplica cuando hay inacción prolongada o mensajes que no generan avance (aunque sean educados).",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 6,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:25:00.000Z",
+    "updatedAt": "2024-09-17T12:25:00.000Z",
+    "rule": "6",
+    "text": "El status \"No atender\" se aplica solo a casos claros de clientes no deseados (tóxicos, niños, vulgares, trolls).",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 5,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:30:00.000Z",
+    "updatedAt": "2024-09-17T12:30:00.000Z",
+    "rule": "7",
+    "text": "**NUNCA** cambies a \"Cargo\", independientemente del mensaje recibido.",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 10,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:35:00.000Z",
+    "updatedAt": "2024-09-17T12:35:00.000Z",
+    "rule": "8",
+    "text": "Si un cliente confirma que ya realizó una transferencia, mantén el status actual o cambia a \"Revisar\" para verificación manual.",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 9,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:40:00.000Z",
+    "updatedAt": "2024-09-17T12:40:00.000Z",
+    "rule": "9",
+    "text": "Tu razonamiento debe explicar con precisión por qué cambias o mantienes el status.",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 8,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T12:45:00.000Z",
+    "updatedAt": "2024-09-17T12:45:00.000Z",
+    "rule": "10",
+    "text": "Responde siempre en español.",
+    "crm": "kommo",
+    "pipeline": "sales",
+    "priority": 7,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T13:00:00.000Z",
+    "updatedAt": "2024-09-17T13:00:00.000Z",
+    "rule": "VALIDATION_1",
+    "text": "Validar que todos los campos requeridos estén presentes antes de procesar cualquier cambio de status.",
+    "crm": "kommo",
+    "pipeline": "validation",
+    "priority": 10,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T13:05:00.000Z",
+    "updatedAt": "2024-09-17T13:05:00.000Z",
+    "rule": "VALIDATION_2",
+    "text": "Verificar que el lead tenga información de contacto válida antes de cualquier procesamiento.",
+    "crm": "kommo",
+    "pipeline": "validation",
+    "priority": 9,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T13:10:00.000Z",
+    "updatedAt": "2024-09-17T13:10:00.000Z",
+    "rule": "TIMEOUT_1",
+    "text": "Marcar como NoCargo después de 48 horas sin actividad del cliente.",
+    "crm": "kommo",
+    "pipeline": "timeout",
+    "priority": 6,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T13:15:00.000Z",
+    "updatedAt": "2024-09-17T13:15:00.000Z",
+    "rule": "TIMEOUT_2",
+    "text": "Enviar recordatorio automático después de 24 horas de inactividad.",
+    "crm": "kommo",
+    "pipeline": "timeout",
+    "priority": 5,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T13:20:00.000Z",
+    "updatedAt": "2024-09-17T13:20:00.000Z",
+    "rule": "SECURITY_1",
+    "text": "Bloquear automáticamente mensajes que contengan palabras ofensivas o inapropiadas.",
+    "crm": "kommo",
+    "pipeline": "security",
+    "priority": 10,
+    "status": "active"
+  },
+  {
+    "createdAt": "2024-09-17T13:25:00.000Z",
+    "updatedAt": "2024-09-17T13:25:00.000Z",
+    "rule": "DRAFT_RULE_1",
+    "text": "Regla en desarrollo: Implementar análisis de sentimiento en mensajes entrantes.",
+    "crm": "kommo",
+    "pipeline": "development",
+    "priority": 3,
+    "status": "draft"
+  },
+  {
+    "createdAt": "2024-09-17T13:30:00.000Z",
+    "updatedAt": "2024-09-17T13:30:00.000Z",
+    "rule": "INACTIVE_RULE_1",
+    "text": "Regla temporalmente inactiva: Procesamiento especial para clientes VIP.",
+    "crm": "kommo",
+    "pipeline": "vip",
+    "priority": 8,
+    "status": "inactive"
+  }
+]

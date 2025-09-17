@@ -17,7 +17,7 @@ import {
   logWebhookError,
   logLeadStatusChange
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI } from "@/lib/mongodb-services"
 import { getLeadInfo, getContactInfo } from "@/lib/kommo-api"
 import type { KommoApiConfig } from "@/lib/kommo-api"
 
@@ -1028,8 +1028,18 @@ export async function POST(request: NextRequest) {
           // Continuar sin contexto si hay error
         }
 
-        // Process with AI usando el status efectivo y contexto histórico
-        const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext)
+        let simplifiedRules: Array<{ priority: number; rule: string }> = []
+        try {
+          simplifiedRules = await getActiveRulesForAI()
+          console.log("📋 Reglas normalizadas para AI:", simplifiedRules)
+
+        } catch (rulesError) {
+          logWebhookError(rulesError, "obteniendo reglas generales")
+          // Continuar sin reglas si hay error (array vacío)
+        }
+
+        // Process with AI usando el status efectivo, contexto histórico y reglas simplificadas
+        const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules)
 
         const processedMessage: ProcessedMessage = {
           talkId: message.talk_id,
