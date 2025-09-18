@@ -1,69 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllSettings } from "../../../lib/mongodb-services";
+import { updateLeadCustomFields, KommoApiConfig } from "../../../lib/kommo-api";
 
-async function sendCbuMessage(leadId: string, subdomain: string, cbu: string) {
-  // Función para enviar un mensaje con el CBU al lead via WhatsApp
-  const KOMMO_TOKEN = process.env.KOMMO_ACCESS_TOKEN; // Usar el mismo token que tenemos
 
-  if (!KOMMO_TOKEN) {
-    throw new Error("KOMMO_ACCESS_TOKEN no está configurado");
-  }
-
-  // Primero necesitamos obtener la conversación (chat) del lead
-  const chatUrl = `https://${subdomain}.kommo.com/api/v4/leads/${leadId}?with=contacts`;
-
-  const chatResponse = await fetch(chatUrl, {
-    headers: {
-      Authorization: `Bearer ${KOMMO_TOKEN}`,
-    },
-  });
-
-  if (!chatResponse.ok) {
-    throw new Error(`Error al obtener información del lead: ${chatResponse.status}`);
-  }
-
-  const leadData = await chatResponse.json();
-
-  // Extraer el contact_id del lead
-  const contactId = leadData._embedded?.contacts?.[0]?.id;
-
-  if (!contactId) {
-    throw new Error("No se pudo encontrar el contact_id del lead");
-  }
-
-  // Ahora enviar mensaje usando la API de mensajes
-  const messageUrl = `https://${subdomain}.kommo.com/api/v4/chats`;
-
-  const payload = {
-    contact_id: contactId,
-    message: {
-      type: "text",
-      text: cbu // Solo el CBU, sin texto adicional
-    },
-    channel_id: 1 // Canal de WhatsApp (ajustar según tu configuración)
-  };
-
-  console.log(`📤 Enviando mensaje con CBU a lead ${leadId} (contacto ${contactId}):`, cbu);
-
-  const res = await fetch(messageUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${KOMMO_TOKEN}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    console.error(`❌ Error al enviar mensaje con CBU: ${res.status} ${res.statusText}`, errorText);
-    throw new Error(`Error en API de Kommo: ${res.status} ${res.statusText}`);
-  }
-
-  const result = await res.json();
-  console.log("✅ Mensaje con CBU enviado exitosamente:", result);
-  return result;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -117,16 +56,43 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ CBU obtenido: ${accountCBU}`);
 
-    // Enviar el mensaje con el CBU
-    await sendCbuMessage(leadId, subdomain, accountCBU);
+    // SETEAR CBU COMO UN CUSTOM FIELD en el lead
+    console.log(`🔄 Actualizando custom field del lead ${leadId} con CBU...`);
+
+    const customFieldsValues = [
+      {
+        field_id: 977357,
+        values: [
+          {
+            value: accountCBU
+          }
+        ]
+      }
+    ];
+
+    const config: KommoApiConfig = { subdomain };
+
+    const updateSuccess = await updateLeadCustomFields(leadId, customFieldsValues, config);
+
+    if (!updateSuccess) {
+      console.error("❌ Error al actualizar el custom field del lead");
+      return NextResponse.json({
+        success: false,
+        error: "Error al actualizar custom field",
+        message: "No se pudo actualizar el campo personalizado del lead"
+      }, { status: 500 });
+    }
+
+    console.log(`✅ Custom field actualizado exitosamente en lead ${leadId}`);
 
     return NextResponse.json({
       success: true,
-      message: "Mensaje con CBU enviado exitosamente",
+      message: "Custom field del lead actualizado exitosamente con el CBU",
       data: {
         leadId,
         cbu: accountCBU,
-        subdomain
+        subdomain,
+        fieldId: 977357
       }
     });
 

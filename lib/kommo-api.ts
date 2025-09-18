@@ -59,6 +59,48 @@ export async function updateLeadStatus(leadId: string, newStatusId: string, conf
   }
 }
 
+export async function updateLeadCustomFields(leadId: string, customFieldsValues: any[], config: KommoApiConfig): Promise<boolean> {
+  const startTime = Date.now()
+  const url = `https://${config.subdomain}.kommo.com/api/v4/leads/${leadId}`
+  const requestBody = { custom_fields_values: customFieldsValues }
+
+  try {
+    // Log de petición saliente
+    logOutgoingHttpRequest("PATCH", url, {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    }, requestBody)
+
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    })
+
+    const responseTime = Date.now() - startTime
+    const responseText = await response.text()
+
+    // Log de respuesta
+    logIncomingHttpResponse(response.status, response.statusText, responseText, responseTime)
+
+    if (!response.ok) {
+      throw new Error(`Failed to update lead custom fields: ${response.status} ${response.statusText} - ${responseText}`)
+    }
+
+    const result = JSON.parse(responseText)
+    logLeadInfoSuccess(result)
+    return true
+  } catch (error) {
+    const responseTime = Date.now() - startTime
+    logHttpError("updateLeadCustomFields", error, url)
+    logKommoApiError("updateLeadCustomFields", error)
+    return false
+  }
+}
+
 export async function getLeadInfo(leadId: string, config: KommoApiConfig): Promise<any> {
   const startTime = Date.now()
   const url = `https://${config.subdomain}.kommo.com/api/v4/leads/${leadId}`
