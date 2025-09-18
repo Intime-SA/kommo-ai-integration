@@ -1040,7 +1040,7 @@ export async function POST(request: NextRequest) {
 
         let settings: SettingsDocument | null = null
         try {
-          settings = await getSettingsById("68cac5f6b9cdc9045002b98d")
+          settings = await getSettingsById("68cc2e745128f9ce1830bfec")
         } catch (settingsError) {
           logWebhookError(settingsError, "obteniendo settings")
         }
