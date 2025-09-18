@@ -335,6 +335,38 @@ class Logger {
   aiResponseReceived(response: any, confidence: number) {
     this.info(`🤖 RESPUESTA DE AI recibida (confianza: ${(confidence * 100).toFixed(1)}%)`, response)
   }
+
+  // Logs específicos para Welcome Bot
+  logWelcomeBotSkipped(messageText: string, reason: string, entityId: string) {
+    this.warn(`🤖 Welcome Bot SALTADO - Entity: ${entityId}`, {
+      message: messageText.substring(0, 100) + (messageText.length > 100 ? '...' : ''),
+      reason,
+      entityId
+    }, { entityId })
+  }
+
+  logWelcomeBotDetection(messageText: string, entityId: string) {
+    this.info(`🤖 Welcome Bot DETECTADO - Entity: ${entityId}`, {
+      message: messageText.substring(0, 100) + (messageText.length > 100 ? '...' : ''),
+      entityId
+    }, { entityId })
+  }
+
+  logWelcomeBotLaunched(entityId: string, botId: number) {
+    this.info(`🚀 Welcome Bot LANZADO exitosamente - Entity: ${entityId}`, {
+      botId,
+      entityId,
+      timestamp: new Date().toISOString()
+    }, { entityId, botId })
+  }
+
+  logWelcomeBotError(entityId: string, error: string) {
+    this.error(`❌ Welcome Bot ERROR - Entity: ${entityId}`, {
+      error,
+      entityId,
+      timestamp: new Date().toISOString()
+    }, { entityId })
+  }
 }
 
 // Instancia singleton del logger
@@ -372,3 +404,9 @@ export const logHttpError = (operation: string, error: any, url?: string) => log
 // Nuevas funciones de logging para AI
 export const logAiPromptSent = (prompt: string, systemMessage: string) => logger.aiPromptSent(prompt, systemMessage)
 export const logAiResponseReceived = (response: any, confidence: number) => logger.aiResponseReceived(response, confidence)
+
+// Funciones de logging para Welcome Bot
+export const logWelcomeBotSkipped = (messageText: string, reason: string, entityId: string) => logger.logWelcomeBotSkipped(messageText, reason, entityId)
+export const logWelcomeBotDetection = (messageText: string, entityId: string) => logger.logWelcomeBotDetection(messageText, entityId)
+export const logWelcomeBotLaunched = (entityId: string, botId: number) => logger.logWelcomeBotLaunched(entityId, botId)
+export const logWelcomeBotError = (entityId: string, error: string) => logger.logWelcomeBotError(entityId, error)

@@ -17,7 +17,7 @@ import {
   logWebhookError,
   logLeadStatusChange
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI, getSettingsById, SettingsDocument, getAllStatus, StatusDocument } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI, getSettingsById, SettingsDocument, getAllStatus, StatusDocument, detectAndLaunchWelcomeBot } from "@/lib/mongodb-services"
 import { getLeadInfo, getContactInfo } from "@/lib/kommo-api"
 import type { KommoApiConfig } from "@/lib/kommo-api"
 
@@ -1163,6 +1163,24 @@ export async function POST(request: NextRequest) {
             logWebhookError(botActionError, "registrando acción del bot sin cambio en base de datos")
             // No lanzamos error aquí para no cortar el flujo principal
           }
+        }
+
+        // Verificar si es un mensaje de bienvenida y lanzar bot si corresponde
+        try {
+          const welcomeBotResult = await detectAndLaunchWelcomeBot(
+            message.text,
+            message.entity_id,
+            settings
+          )
+
+          if (welcomeBotResult.launched) {
+            console.log(`🤖 Bot de bienvenida lanzado exitosamente para mensaje: "${message.text}"`)
+          } else if (welcomeBotResult.error) {
+            console.log(`ℹ️ Bot de bienvenida no lanzado: ${welcomeBotResult.error}`)
+          }
+        } catch (welcomeBotError) {
+          console.error(`❌ Error al procesar bot de bienvenida:`, welcomeBotError)
+          // No lanzamos error aquí para no cortar el flujo principal
         }
 
         return NextResponse.json({

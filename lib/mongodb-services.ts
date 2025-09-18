@@ -1,5 +1,11 @@
-import { MongoClient, ObjectId } from 'mongodb';
-import clientPromise from './mongodb';
+import { MongoClient, ObjectId } from "mongodb";
+import clientPromise from "./mongodb";
+import {
+  logWelcomeBotSkipped,
+  logWelcomeBotDetection,
+  logWelcomeBotLaunched,
+  logWelcomeBotError,
+} from "./logger";
 
 // Función helper para obtener fecha hace N horas
 function getDateHoursAgo(hours: number): string {
@@ -190,17 +196,19 @@ export interface ContactContext {
 // Utilidad para convertir fechas al formato ISO string en horario Argentina
 export function convertToArgentinaISO(ts: string | number): string {
   // Convertir a número si viene como string
-  const timestamp = typeof ts === 'string' ? Number(ts) : ts;
+  const timestamp = typeof ts === "string" ? Number(ts) : ts;
 
   // Timestamp en segundos (como viene de la API de Kommo)
   const dUTC = new Date(timestamp * 1000);
 
   // Obtener la diferencia horaria con Argentina (en minutos)
-  const argentinaOffset = dUTC.toLocaleString('en', { timeZone: 'America/Argentina/Buenos_Aires' });
-  const utcOffset = dUTC.toLocaleString('en', { timeZone: 'UTC' });
+  const argentinaOffset = dUTC.toLocaleString("en", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
+  const utcOffset = dUTC.toLocaleString("en", { timeZone: "UTC" });
 
   // Crear fecha ajustada restando el offset de Argentina
-  const dAR = new Date(dUTC.getTime() - (3 * 60 * 60 * 1000)); // Restar 3 horas
+  const dAR = new Date(dUTC.getTime() - 3 * 60 * 60 * 1000); // Restar 3 horas
 
   return dAR.toISOString();
 }
@@ -210,7 +218,7 @@ export function getCurrentArgentinaISO(): string {
   const now = new Date();
 
   // Crear fecha ajustada restando 3 horas (Argentina offset)
-  const dAR = new Date(now.getTime() - (3 * 60 * 60 * 1000));
+  const dAR = new Date(now.getTime() - 3 * 60 * 60 * 1000);
 
   return dAR.toISOString();
 }
@@ -226,7 +234,7 @@ export function convertToArgentinaTime(dateString: string): Date {
   // Los datos se almacenan como: new Date().toISOString() pero restando 3 horas
   // Para consultas, si el usuario envía "2025-09-12T15:18:00.000Z",
   // necesitamos convertirlo a zona Argentina: restar 3 horas
-  return new Date(date.getTime() - (3 * 60 * 60 * 1000));
+  return new Date(date.getTime() - 3 * 60 * 60 * 1000);
 }
 
 // Servicios para interactuar con MongoDB
@@ -253,7 +261,7 @@ export class KommoDatabaseService {
 
   private async getCollection(collectionName: string) {
     const client = await this.getClient();
-    const db = client.db('kommo');
+    const db = client.db("kommo");
     return db.collection(collectionName);
   }
 
@@ -267,7 +275,7 @@ export class KommoDatabaseService {
     sourceName: string;
     messageText: string;
   }): Promise<UserDocument> {
-    const collection = await this.getCollection('users');
+    const collection = await this.getCollection("users");
 
     // Verificar si ya existe un usuario con este client.id
     const existingUser = await collection.findOne({ clientId: data.client.id });
@@ -324,7 +332,7 @@ export class KommoDatabaseService {
     messageText: string;
     sourceName: string;
   }): Promise<LeadDocument> {
-    const collection = await this.getCollection('leads');
+    const collection = await this.getCollection("leads");
 
     // Verificar si ya existe un lead con este uid
     const existingLead = await collection.findOne({ uid: data.uid });
@@ -344,10 +352,7 @@ export class KommoDatabaseService {
         updatedAt: getCurrentArgentinaISO(),
       };
 
-      await collection.updateOne(
-        { uid: data.uid },
-        { $set: updateData }
-      );
+      await collection.updateOne({ uid: data.uid }, { $set: updateData });
 
       return { ...existingLead, ...updateData } as LeadDocument;
     }
@@ -385,7 +390,7 @@ export class KommoDatabaseService {
     isRead: string;
     createdAt: string | number;
   }): Promise<TaskDocument> {
-    const collection = await this.getCollection('tasks');
+    const collection = await this.getCollection("tasks");
 
     // Verificar si ya existe una task con este talkId
     const existingTask = await collection.findOne({ talkId: data.talkId });
@@ -413,8 +418,8 @@ export class KommoDatabaseService {
       entityId: data.entityId,
       entityType: data.entityType,
       origin: data.origin,
-      isInWork: data.isInWork === '1',
-      isRead: data.isRead === '1',
+      isInWork: data.isInWork === "1",
+      isRead: data.isRead === "1",
       createdAt: convertToArgentinaISO(data.createdAt),
       updatedAt: getCurrentArgentinaISO(),
     };
@@ -436,7 +441,7 @@ export class KommoDatabaseService {
     isRead: string;
     updatedAt: string | number;
   }): Promise<TaskDocument> {
-    const collection = await this.getCollection('tasks');
+    const collection = await this.getCollection("tasks");
 
     const updateData: Partial<TaskDocument> = {
       contactId: data.contactId,
@@ -444,15 +449,15 @@ export class KommoDatabaseService {
       entityId: data.entityId,
       entityType: data.entityType,
       origin: data.origin,
-      isInWork: data.isInWork === '1',
-      isRead: data.isRead === '1',
+      isInWork: data.isInWork === "1",
+      isRead: data.isRead === "1",
       updatedAt: convertToArgentinaISO(data.updatedAt),
     };
 
     const result = await collection.findOneAndUpdate(
       { talkId: data.talkId },
       { $set: updateData },
-      { returnDocument: 'after' }
+      { returnDocument: "after" }
     );
 
     if (!result) {
@@ -481,7 +486,7 @@ export class KommoDatabaseService {
       name: string;
     };
   }): Promise<MessageDocument> {
-    const collection = await this.getCollection('messages');
+    const collection = await this.getCollection("messages");
 
     // Verificar si ya existe un mensaje con este id
     const existingMessage = await collection.findOne({ id: data.id });
@@ -502,10 +507,7 @@ export class KommoDatabaseService {
         updatedAt: getCurrentArgentinaISO(),
       };
 
-      await collection.updateOne(
-        { id: data.id },
-        { $set: updateData }
-      );
+      await collection.updateOne({ id: data.id }, { $set: updateData });
 
       return { ...existingMessage, ...updateData } as MessageDocument;
     }
@@ -551,7 +553,7 @@ export class KommoDatabaseService {
       error?: string;
     };
   }): Promise<BotActionDocument> {
-    const collection = await this.getCollection('bot_actions');
+    const collection = await this.getCollection("bot_actions");
 
     // Crear nuevo registro de acción del bot
     const botActionDocument: BotActionDocument = {
@@ -576,7 +578,7 @@ export class KommoDatabaseService {
     token: string;
     lead: any;
   }): Promise<TokenVisitDocument> {
-    const collection = await this.getCollection('token_visit');
+    const collection = await this.getCollection("token_visit");
 
     // Crear nuevo registro de token visit
     const tokenVisitDocument: TokenVisitDocument = {
@@ -592,15 +594,17 @@ export class KommoDatabaseService {
 
   // Servicio para buscar token por valor
   async findTokenVisit(token: string): Promise<TokenVisitDocument | null> {
-    const collection = await this.getCollection('token_visit');
+    const collection = await this.getCollection("token_visit");
     const result = await collection.findOne({ token });
-    return result ? { ...result, _id: result._id.toString() } as TokenVisitDocument : null;
+    return result
+      ? ({ ...result, _id: result._id.toString() } as TokenVisitDocument)
+      : null;
   }
 
   // Servicio para obtener contexto histórico de un contacto (últimas 24 horas)
   async getContactContext(contactId: string): Promise<ContactContext> {
     const client = await this.getClient();
-    const db = client.db('kommo');
+    const db = client.db("kommo");
 
     // Calcular fecha límite (24 horas atrás)
     const twentyFourHoursAgo = new Date();
@@ -612,104 +616,113 @@ export class KommoDatabaseService {
       leadsResult,
       messagesResult,
       tasksResult,
-      botActionsResult
+      botActionsResult,
     ] = await Promise.all([
       // Información del usuario
-      db.collection('users').findOne({ contactId }),
+      db.collection("users").findOne({ contactId }),
 
       // Leads activos (últimas 24 horas)
-      db.collection('leads')
+      db
+        .collection("leads")
         .find({
           contactId,
-          createdAt: { $gte: twentyFourHoursAgo.toISOString() }
+          createdAt: { $gte: twentyFourHoursAgo.toISOString() },
         })
         .sort({ createdAt: -1 })
         .toArray(),
 
       // Mensajes recientes
-      db.collection('messages')
+      db
+        .collection("messages")
         .find({
           contactId,
-          createdAt: { $gte: twentyFourHoursAgo.toISOString() }
+          createdAt: { $gte: twentyFourHoursAgo.toISOString() },
         })
         .sort({ createdAt: 1 })
         .toArray(),
 
       // Tareas activas
-      db.collection('tasks')
+      db
+        .collection("tasks")
         .find({
           contactId,
-          createdAt: { $gte: twentyFourHoursAgo.toISOString() }
+          createdAt: { $gte: twentyFourHoursAgo.toISOString() },
         })
         .sort({ updatedAt: -1 })
         .toArray(),
 
       // Acciones del bot recientes
-      db.collection('bot_actions')
+      db
+        .collection("bot_actions")
         .find({
           contactId,
-          createdAt: { $gte: twentyFourHoursAgo.toISOString() }
+          createdAt: { $gte: twentyFourHoursAgo.toISOString() },
         })
         .sort({ createdAt: -1 })
-        .toArray()
+        .toArray(),
     ]);
 
     // Procesar y normalizar la información del usuario
-    const userInfo = userResult ? {
-      name: userResult.name,
-      clientId: userResult.clientId,
-      source: userResult.source,
-      sourceName: userResult.sourceName,
-      firstMessage: userResult.messageText,
-      firstMessageDate: userResult.createdAt
-    } : undefined;
+    const userInfo = userResult
+      ? {
+          name: userResult.name,
+          clientId: userResult.clientId,
+          source: userResult.source,
+          sourceName: userResult.sourceName,
+          firstMessage: userResult.messageText,
+          firstMessageDate: userResult.createdAt,
+        }
+      : undefined;
 
     // Procesar leads activos
-    const activeLeads = leadsResult.map(lead => ({
+    const activeLeads = leadsResult.map((lead) => ({
       leadId: lead.leadId,
       createdAt: lead.createdAt,
-      lastActivity: lead.updatedAt
+      lastActivity: lead.updatedAt,
     }));
 
     // Procesar mensajes recientes
-    const recentMessages = messagesResult.map(msg => ({
+    const recentMessages = messagesResult.map((msg) => ({
       text: msg.text,
       type: msg.type,
       createdAt: msg.createdAt,
-      authorName: msg.author?.name || 'Desconocido'
+      authorName: msg.author?.name || "Desconocido",
     }));
 
     // Procesar tareas activas
-    const activeTasks = tasksResult.map(task => ({
+    const activeTasks = tasksResult.map((task) => ({
       talkId: task.talkId,
       isInWork: task.isInWork,
       isRead: task.isRead,
       createdAt: task.createdAt,
-      lastActivity: task.updatedAt
+      lastActivity: task.updatedAt,
     }));
 
     // Procesar acciones del bot
-    const botActions = botActionsResult.map(action => ({
+    const botActions = botActionsResult.map((action) => ({
       messageText: action.messageText,
       aiDecision: action.aiDecision,
       statusUpdateResult: action.statusUpdateResult,
-      processingTimestamp: action.processingTimestamp
+      processingTimestamp: action.processingTimestamp,
     }));
 
     // Calcular resumen
     const totalMessages = recentMessages.length;
-    const lastActivity = recentMessages.length > 0
-      ? recentMessages[recentMessages.length - 1].createdAt
-      : (userInfo?.firstMessageDate || new Date().toISOString());
+    const lastActivity =
+      recentMessages.length > 0
+        ? recentMessages[recentMessages.length - 1].createdAt
+        : userInfo?.firstMessageDate || new Date().toISOString();
 
     // Determinar status actual basado en la última acción del bot
-    const currentStatus = botActions.length > 0
-      ? botActions[0].aiDecision.newStatus
-      : undefined;
+    const currentStatus =
+      botActions.length > 0 ? botActions[0].aiDecision.newStatus : undefined;
 
     // Calcular duración de la conversación
     const firstActivity = userInfo?.firstMessageDate || lastActivity;
-    const conversationDuration = this.calculateDuration(firstActivity, lastActivity);
+    const conversationDuration = this.calculateDuration(
+      firstActivity,
+      lastActivity
+    );
 
     return {
       contactId,
@@ -722,8 +735,8 @@ export class KommoDatabaseService {
         totalMessages,
         lastActivity,
         currentStatus,
-        conversationDuration
-      }
+        conversationDuration,
+      },
     };
   }
 
@@ -746,8 +759,10 @@ export class KommoDatabaseService {
   /**
    * Obtiene logs de mensajes recibidos con filtros y paginación
    */
-  async getReceivedMessagesLogs(params: LogsQueryParams): Promise<{ logs: ReceivedMessageLog[], total: number }> {
-    const collection = await this.getCollection('messages');
+  async getReceivedMessagesLogs(
+    params: LogsQueryParams
+  ): Promise<{ logs: ReceivedMessageLog[]; total: number }> {
+    const collection = await this.getCollection("messages");
 
     // Construir pipeline de agregación para messages
     const pipeline: any[] = [];
@@ -768,18 +783,21 @@ export class KommoDatabaseService {
     if (params.contactId) andConditions.push({ contactId: params.contactId });
     if (params.leadId) andConditions.push({ entityId: params.leadId });
     if (params.talkId) andConditions.push({ talkId: params.talkId });
-    if (params.userName) andConditions.push({ 'author.name': { $regex: params.userName, $options: 'i' } });
+    if (params.userName)
+      andConditions.push({
+        "author.name": { $regex: params.userName, $options: "i" },
+      });
 
     // Filtro por searchTerm (busca en contactId, leadId o authorName)
     if (params.searchTerm) {
-      const searchRegex = { $regex: params.searchTerm, $options: 'i' };
+      const searchRegex = { $regex: params.searchTerm, $options: "i" };
       andConditions.push({
         $or: [
           { contactId: searchRegex },
           { entityId: searchRegex },
-          { 'author.name': searchRegex },
-          { 'text': searchRegex } // También buscar en el texto del mensaje
-        ]
+          { "author.name": searchRegex },
+          { text: searchRegex }, // También buscar en el texto del mensaje
+        ],
       });
     }
 
@@ -798,50 +816,63 @@ export class KommoDatabaseService {
     // Lookup para obtener información del usuario/contacto
     pipeline.push({
       $lookup: {
-        from: 'users',
-        localField: 'contactId',
-        foreignField: 'contactId',
-        as: 'userInfo'
-      }
+        from: "users",
+        localField: "contactId",
+        foreignField: "contactId",
+        as: "userInfo",
+      },
     });
 
     // Lookup para obtener información del lead
     pipeline.push({
       $lookup: {
-        from: 'leads',
-        localField: 'entityId',
-        foreignField: 'leadId',
-        as: 'leadInfo'
-      }
+        from: "leads",
+        localField: "entityId",
+        foreignField: "leadId",
+        as: "leadInfo",
+      },
     });
 
     // Proyección de los campos necesarios
     pipeline.push({
       $project: {
-        id: '$id',
-        timestamp: '$createdAt',
-        type: { $literal: 'received_messages' },
-        contactId: '$contactId',
-        leadId: '$entityId',
-        talkId: '$talkId',
-        messageText: '$text',
-        messageType: '$type',
-        authorName: '$author.name',
-        messageId: '$id',
-        chatId: '$chatId',
-        userName: { $ifNull: [{ $arrayElemAt: ['$userInfo.name', 0] }, '$author.name'] },
-        clientId: { $ifNull: [{ $arrayElemAt: ['$userInfo.clientId', 0] }, ''] },
-        sourceName: { $ifNull: [{ $arrayElemAt: ['$userInfo.sourceName', 0] }, ''] }
-      }
+        id: "$id",
+        timestamp: "$createdAt",
+        type: { $literal: "received_messages" },
+        contactId: "$contactId",
+        leadId: "$entityId",
+        talkId: "$talkId",
+        messageText: "$text",
+        messageType: "$type",
+        authorName: "$author.name",
+        messageId: "$id",
+        chatId: "$chatId",
+        userName: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.name", 0] }, "$author.name"],
+        },
+        clientId: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.clientId", 0] }, ""],
+        },
+        sourceName: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.sourceName", 0] }, ""],
+        },
+      },
     });
 
     // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
-    const sortField = params.sortBy === 'timestamp' ? 'timestamp' :
-                     params.sortBy === 'userName' ? 'userName' :
-                     params.sortBy === 'contactId' ? 'contactId' :
-                     params.sortBy === 'leadId' ? 'leadId' :
-                     params.sortBy === 'type' ? 'type' : 'timestamp';
-    const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+    const sortField =
+      params.sortBy === "timestamp"
+        ? "timestamp"
+        : params.sortBy === "userName"
+        ? "userName"
+        : params.sortBy === "contactId"
+        ? "contactId"
+        : params.sortBy === "leadId"
+        ? "leadId"
+        : params.sortBy === "type"
+        ? "type"
+        : "timestamp";
+    const sortOrder = params.sortOrder === "asc" ? 1 : -1;
     pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
 
     // Paginación
@@ -860,19 +891,21 @@ export class KommoDatabaseService {
       logs: logs.map((log, index) => ({
         ...log,
         index: offset + index + 1,
-        userName: log.userName || 'Usuario desconocido',
-        clientId: log.clientId || '',
-        sourceName: log.sourceName || ''
+        userName: log.userName || "Usuario desconocido",
+        clientId: log.clientId || "",
+        sourceName: log.sourceName || "",
       })) as ReceivedMessageLog[],
-      total
+      total,
     };
   }
 
   /**
    * Obtiene logs de cambios de status
    */
-  async getChangeStatusLogs(params: LogsQueryParams): Promise<{ logs: ChangeStatusLog[], total: number }> {
-    const collection = await this.getCollection('bot_actions');
+  async getChangeStatusLogs(
+    params: LogsQueryParams
+  ): Promise<{ logs: ChangeStatusLog[]; total: number }> {
+    const collection = await this.getCollection("bot_actions");
 
     // Construir pipeline de agregación
     const pipeline: any[] = [];
@@ -893,18 +926,20 @@ export class KommoDatabaseService {
     if (params.contactId) andConditions.push({ contactId: params.contactId });
     if (params.leadId) andConditions.push({ entityId: params.leadId });
     if (params.talkId) andConditions.push({ talkId: params.talkId });
-    if (params.status) andConditions.push({ 'aiDecision.newStatus': params.status });
-    if (params.changedBy === 'bot') andConditions.push({ 'aiDecision.shouldChange': true });
+    if (params.status)
+      andConditions.push({ "aiDecision.newStatus": params.status });
+    if (params.changedBy === "bot")
+      andConditions.push({ "aiDecision.shouldChange": true });
 
     // Filtro por searchTerm (busca en contactId, leadId o userName)
     if (params.searchTerm) {
-      const searchRegex = { $regex: params.searchTerm, $options: 'i' };
+      const searchRegex = { $regex: params.searchTerm, $options: "i" };
       andConditions.push({
         $or: [
           { contactId: searchRegex },
           { entityId: searchRegex },
-          { messageText: searchRegex }
-        ]
+          { messageText: searchRegex },
+        ],
       });
     }
 
@@ -923,41 +958,57 @@ export class KommoDatabaseService {
     // Lookup para obtener información del usuario
     pipeline.push({
       $lookup: {
-        from: 'users',
-        localField: 'contactId',
-        foreignField: 'contactId',
-        as: 'userInfo'
-      }
+        from: "users",
+        localField: "contactId",
+        foreignField: "contactId",
+        as: "userInfo",
+      },
     });
 
     // Proyección
     pipeline.push({
       $project: {
-        id: '$_id',
-        timestamp: '$createdAt',
-        type: { $literal: 'change_status' },
-        contactId: '$contactId',
-        leadId: '$entityId',
-        talkId: '$talkId',
-        oldStatus: '$aiDecision.currentStatus',
-        newStatus: '$aiDecision.newStatus',
-        changedBy: { $literal: 'bot' },
-        reason: '$aiDecision.reasoning',
-        confidence: '$aiDecision.confidence',
-        success: '$statusUpdateResult.success',
-        userName: { $ifNull: [{ $arrayElemAt: ['$userInfo.name', 0] }, 'Usuario desconocido'] },
-        clientId: { $ifNull: [{ $arrayElemAt: ['$userInfo.clientId', 0] }, ''] },
-        sourceName: { $ifNull: [{ $arrayElemAt: ['$userInfo.sourceName', 0] }, ''] }
-      }
+        id: "$_id",
+        timestamp: "$createdAt",
+        type: { $literal: "change_status" },
+        contactId: "$contactId",
+        leadId: "$entityId",
+        talkId: "$talkId",
+        oldStatus: "$aiDecision.currentStatus",
+        newStatus: "$aiDecision.newStatus",
+        changedBy: { $literal: "bot" },
+        reason: "$aiDecision.reasoning",
+        confidence: "$aiDecision.confidence",
+        success: "$statusUpdateResult.success",
+        userName: {
+          $ifNull: [
+            { $arrayElemAt: ["$userInfo.name", 0] },
+            "Usuario desconocido",
+          ],
+        },
+        clientId: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.clientId", 0] }, ""],
+        },
+        sourceName: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.sourceName", 0] }, ""],
+        },
+      },
     });
 
     // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
-    const sortField = params.sortBy === 'timestamp' ? 'timestamp' :
-                     params.sortBy === 'userName' ? 'userName' :
-                     params.sortBy === 'contactId' ? 'contactId' :
-                     params.sortBy === 'leadId' ? 'leadId' :
-                     params.sortBy === 'type' ? 'type' : 'timestamp';
-    const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+    const sortField =
+      params.sortBy === "timestamp"
+        ? "timestamp"
+        : params.sortBy === "userName"
+        ? "userName"
+        : params.sortBy === "contactId"
+        ? "contactId"
+        : params.sortBy === "leadId"
+        ? "leadId"
+        : params.sortBy === "type"
+        ? "type"
+        : "timestamp";
+    const sortOrder = params.sortOrder === "asc" ? 1 : -1;
     pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
 
     // Paginación
@@ -977,19 +1028,21 @@ export class KommoDatabaseService {
         ...log,
         index: offset + index + 1,
         id: log.id.toString(),
-        userName: log.userName || 'Usuario desconocido',
-        clientId: log.clientId || '',
-        sourceName: log.sourceName || ''
+        userName: log.userName || "Usuario desconocido",
+        clientId: log.clientId || "",
+        sourceName: log.sourceName || "",
       })) as ChangeStatusLog[],
-      total
+      total,
     };
   }
 
   /**
    * Obtiene logs de acciones del bot
    */
-  async getBotActionsLogs(params: LogsQueryParams): Promise<{ logs: BotActionLog[], total: number }> {
-    const collection = await this.getCollection('bot_actions');
+  async getBotActionsLogs(
+    params: LogsQueryParams
+  ): Promise<{ logs: BotActionLog[]; total: number }> {
+    const collection = await this.getCollection("bot_actions");
 
     // Construir pipeline de agregación
     const pipeline: any[] = [];
@@ -1010,17 +1063,18 @@ export class KommoDatabaseService {
     if (params.contactId) andConditions.push({ contactId: params.contactId });
     if (params.leadId) andConditions.push({ entityId: params.leadId });
     if (params.talkId) andConditions.push({ talkId: params.talkId });
-    if (params.status) andConditions.push({ 'aiDecision.newStatus': params.status });
+    if (params.status)
+      andConditions.push({ "aiDecision.newStatus": params.status });
 
     // Filtro por searchTerm (busca en contactId, leadId o userName)
     if (params.searchTerm) {
-      const searchRegex = { $regex: params.searchTerm, $options: 'i' };
+      const searchRegex = { $regex: params.searchTerm, $options: "i" };
       andConditions.push({
         $or: [
           { contactId: searchRegex },
           { entityId: searchRegex },
-          { messageText: searchRegex }
-        ]
+          { messageText: searchRegex },
+        ],
       });
     }
 
@@ -1039,11 +1093,11 @@ export class KommoDatabaseService {
     // Lookup para obtener información del usuario
     pipeline.push({
       $lookup: {
-        from: 'users',
-        localField: 'contactId',
-        foreignField: 'contactId',
-        as: 'userInfo'
-      }
+        from: "users",
+        localField: "contactId",
+        foreignField: "contactId",
+        as: "userInfo",
+      },
     });
 
     // Calcular tiempo de procesamiento
@@ -1051,39 +1105,55 @@ export class KommoDatabaseService {
       $addFields: {
         processingTime: {
           $subtract: [
-            { $dateFromString: { dateString: '$createdAt' } },
-            { $dateFromString: { dateString: '$messageCreatedAt' } }
-          ]
-        }
-      }
+            { $dateFromString: { dateString: "$createdAt" } },
+            { $dateFromString: { dateString: "$messageCreatedAt" } },
+          ],
+        },
+      },
     });
 
     // Proyección
     pipeline.push({
       $project: {
-        id: '$_id',
-        timestamp: '$createdAt',
-        type: { $literal: 'bot_actions' },
-        contactId: '$contactId',
-        leadId: '$entityId',
-        talkId: '$talkId',
-        messageText: '$messageText',
-        aiDecision: '$aiDecision',
-        statusUpdateResult: '$statusUpdateResult',
-        processingTime: '$processingTime',
-        userName: { $ifNull: [{ $arrayElemAt: ['$userInfo.name', 0] }, 'Usuario desconocido'] },
-        clientId: { $ifNull: [{ $arrayElemAt: ['$userInfo.clientId', 0] }, ''] },
-        sourceName: { $ifNull: [{ $arrayElemAt: ['$userInfo.sourceName', 0] }, ''] }
-      }
+        id: "$_id",
+        timestamp: "$createdAt",
+        type: { $literal: "bot_actions" },
+        contactId: "$contactId",
+        leadId: "$entityId",
+        talkId: "$talkId",
+        messageText: "$messageText",
+        aiDecision: "$aiDecision",
+        statusUpdateResult: "$statusUpdateResult",
+        processingTime: "$processingTime",
+        userName: {
+          $ifNull: [
+            { $arrayElemAt: ["$userInfo.name", 0] },
+            "Usuario desconocido",
+          ],
+        },
+        clientId: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.clientId", 0] }, ""],
+        },
+        sourceName: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.sourceName", 0] }, ""],
+        },
+      },
     });
 
     // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
-    const sortField = params.sortBy === 'timestamp' ? 'timestamp' :
-                     params.sortBy === 'userName' ? 'userName' :
-                     params.sortBy === 'contactId' ? 'contactId' :
-                     params.sortBy === 'leadId' ? 'leadId' :
-                     params.sortBy === 'type' ? 'type' : 'timestamp';
-    const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+    const sortField =
+      params.sortBy === "timestamp"
+        ? "timestamp"
+        : params.sortBy === "userName"
+        ? "userName"
+        : params.sortBy === "contactId"
+        ? "contactId"
+        : params.sortBy === "leadId"
+        ? "leadId"
+        : params.sortBy === "type"
+        ? "type"
+        : "timestamp";
+    const sortOrder = params.sortOrder === "asc" ? 1 : -1;
     pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
 
     // Paginación
@@ -1103,20 +1173,23 @@ export class KommoDatabaseService {
         ...log,
         index: offset + index + 1,
         id: log.id.toString(),
-        userName: log.userName || 'Usuario desconocido',
-        clientId: log.clientId || '',
-        sourceName: log.sourceName || '',
-        processingTime: typeof log.processingTime === 'number' ? log.processingTime : 0
+        userName: log.userName || "Usuario desconocido",
+        clientId: log.clientId || "",
+        sourceName: log.sourceName || "",
+        processingTime:
+          typeof log.processingTime === "number" ? log.processingTime : 0,
       })) as BotActionLog[],
-      total
+      total,
     };
   }
 
   /**
    * Obtiene logs de envío a Meta
    */
-  async getSendMetaLogs(params: LogsQueryParams): Promise<{ logs: SendMetaLog[], total: number }> {
-    const collection = await this.getCollection('leads');
+  async getSendMetaLogs(
+    params: LogsQueryParams
+  ): Promise<{ logs: SendMetaLog[]; total: number }> {
+    const collection = await this.getCollection("leads");
 
     // Construir pipeline de agregación para send_meta
     const pipeline: any[] = [];
@@ -1136,18 +1209,21 @@ export class KommoDatabaseService {
     // Filtros específicos
     if (params.contactId) andConditions.push({ contactId: params.contactId });
     if (params.leadId) andConditions.push({ leadId: params.leadId });
-    if (params.userName) andConditions.push({ 'client.name': { $regex: params.userName, $options: 'i' } });
+    if (params.userName)
+      andConditions.push({
+        "client.name": { $regex: params.userName, $options: "i" },
+      });
 
     // Filtro por searchTerm (busca en contactId, leadId, client.name o extractedCode)
     if (params.searchTerm) {
-      const searchRegex = { $regex: params.searchTerm, $options: 'i' };
+      const searchRegex = { $regex: params.searchTerm, $options: "i" };
       andConditions.push({
         $or: [
           { contactId: searchRegex },
           { leadId: searchRegex },
-          { 'client.name': searchRegex },
-          { 'meta_data.extractedCode': searchRegex }
-        ]
+          { "client.name": searchRegex },
+          { "meta_data.extractedCode": searchRegex },
+        ],
       });
     }
 
@@ -1166,51 +1242,68 @@ export class KommoDatabaseService {
     // Lookup para obtener información del usuario/contacto
     pipeline.push({
       $lookup: {
-        from: 'users',
-        localField: 'contactId',
-        foreignField: 'contactId',
-        as: 'userInfo'
-      }
+        from: "users",
+        localField: "contactId",
+        foreignField: "contactId",
+        as: "userInfo",
+      },
     });
 
     // Lookup para obtener información del lead
     pipeline.push({
       $lookup: {
-        from: 'leads',
-        localField: 'leadId',
-        foreignField: 'leadId',
-        as: 'leadInfo'
-      }
+        from: "leads",
+        localField: "leadId",
+        foreignField: "leadId",
+        as: "leadInfo",
+      },
     });
 
     // Proyección de los campos necesarios
     pipeline.push({
       $project: {
-        id: '$_id',
-        timestamp: { $ifNull: ['$updatedAt', '$createdAt'] },
-        type: { $literal: 'send_meta' },
-        contactId: '$contactId',
-        leadId: '$leadId',
-        talkId: '$talkId',
-        extractedCode: '$meta_data.extractedCode',
-        conversionData: '$meta_data.conversionData',
-        conversionResults: '$meta_data.conversionResults',
-        success: '$meta_data.success',
-        messageText: '$messageText',
-        userName: { $ifNull: [{ $arrayElemAt: ['$userInfo.name', 0] }, '$client.name'] },
-        clientId: { $ifNull: [{ $arrayElemAt: ['$userInfo.clientId', 0] }, '$client.id'] },
-        sourceName: { $ifNull: [{ $arrayElemAt: ['$userInfo.sourceName', 0] }, '$sourceName'] }
-      }
+        id: "$_id",
+        timestamp: { $ifNull: ["$updatedAt", "$createdAt"] },
+        type: { $literal: "send_meta" },
+        contactId: "$contactId",
+        leadId: "$leadId",
+        talkId: "$talkId",
+        extractedCode: "$meta_data.extractedCode",
+        conversionData: "$meta_data.conversionData",
+        conversionResults: "$meta_data.conversionResults",
+        success: "$meta_data.success",
+        messageText: "$messageText",
+        userName: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.name", 0] }, "$client.name"],
+        },
+        clientId: {
+          $ifNull: [{ $arrayElemAt: ["$userInfo.clientId", 0] }, "$client.id"],
+        },
+        sourceName: {
+          $ifNull: [
+            { $arrayElemAt: ["$userInfo.sourceName", 0] },
+            "$sourceName",
+          ],
+        },
+      },
     });
 
     // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
-    const sortField = params.sortBy === 'timestamp' ? 'timestamp' :
-                     params.sortBy === 'userName' ? 'userName' :
-                     params.sortBy === 'contactId' ? 'contactId' :
-                     params.sortBy === 'leadId' ? 'leadId' :
-                     params.sortBy === 'extractedCode' ? 'extractedCode' :
-                     params.sortBy === 'type' ? 'type' : 'timestamp';
-    const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+    const sortField =
+      params.sortBy === "timestamp"
+        ? "timestamp"
+        : params.sortBy === "userName"
+        ? "userName"
+        : params.sortBy === "contactId"
+        ? "contactId"
+        : params.sortBy === "leadId"
+        ? "leadId"
+        : params.sortBy === "extractedCode"
+        ? "extractedCode"
+        : params.sortBy === "type"
+        ? "type"
+        : "timestamp";
+    const sortOrder = params.sortOrder === "asc" ? 1 : -1;
     pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
 
     // Paginación
@@ -1229,17 +1322,20 @@ export class KommoDatabaseService {
       logs: logs.map((log, index) => ({
         ...log,
         index: offset + index + 1,
-        timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : log.timestamp,
-        userName: log.userName || 'Usuario desconocido',
-        clientId: log.clientId || '',
-        sourceName: log.sourceName || '',
-        talkId: log.talkId || '',
-        extractedCode: log.extractedCode || '',
+        timestamp:
+          log.timestamp instanceof Date
+            ? log.timestamp.toISOString()
+            : log.timestamp,
+        userName: log.userName || "Usuario desconocido",
+        clientId: log.clientId || "",
+        sourceName: log.sourceName || "",
+        talkId: log.talkId || "",
+        extractedCode: log.extractedCode || "",
         conversionData: log.conversionData || [],
         conversionResults: log.conversionResults || [],
-        success: log.success || false
+        success: log.success || false,
       })) as SendMetaLog[],
-      total
+      total,
     };
   }
 
@@ -1253,18 +1349,27 @@ export class KommoDatabaseService {
     send_meta: number;
   }> {
     // Ejecutar consultas en paralelo para obtener conteos por tipo
-    const [messagesCount, statusCount, actionsCount, sendMetaCount] = await Promise.all([
-      this.getReceivedMessagesLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0),
-      this.getChangeStatusLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0),
-      this.getBotActionsLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0),
-      this.getSendMetaLogs({ ...params, limit: 0, offset: 0 }).then(r => r.total).catch(() => 0)
-    ]);
+    const [messagesCount, statusCount, actionsCount, sendMetaCount] =
+      await Promise.all([
+        this.getReceivedMessagesLogs({ ...params, limit: 0, offset: 0 })
+          .then((r) => r.total)
+          .catch(() => 0),
+        this.getChangeStatusLogs({ ...params, limit: 0, offset: 0 })
+          .then((r) => r.total)
+          .catch(() => 0),
+        this.getBotActionsLogs({ ...params, limit: 0, offset: 0 })
+          .then((r) => r.total)
+          .catch(() => 0),
+        this.getSendMetaLogs({ ...params, limit: 0, offset: 0 })
+          .then((r) => r.total)
+          .catch(() => 0),
+      ]);
 
     return {
       received_messages: messagesCount,
       change_status: statusCount,
       bot_actions: actionsCount,
-      send_meta: sendMetaCount
+      send_meta: sendMetaCount,
     };
   }
 
@@ -1273,11 +1378,14 @@ export class KommoDatabaseService {
    */
   async getConsolidatedLogs(params: LogsQueryParams): Promise<LogsResponse> {
     // Aplicar filtro de 24 horas por defecto si no se especifican fechas
-    const effectiveParams = !params.startDate && !params.endDate ? {
-      ...params,
-      startDate: getDateHoursAgo(24),
-      endDate: getCurrentDate()
-    } : params;
+    const effectiveParams =
+      !params.startDate && !params.endDate
+        ? {
+            ...params,
+            startDate: getDateHoursAgo(24),
+            endDate: getCurrentDate(),
+          }
+        : params;
 
     const limit = effectiveParams.limit || 50;
     const offset = effectiveParams.offset || 0;
@@ -1290,7 +1398,7 @@ export class KommoDatabaseService {
 
     // Si se especifica un tipo específico, consultar solo ese
     // Los métodos individuales ya manejan la paginación, así que no aplicar paginación adicional
-    if (effectiveParams.logType === 'received_messages') {
+    if (effectiveParams.logType === "received_messages") {
       const result = await this.getReceivedMessagesLogs(effectiveParams);
       // Los logs ya vienen paginados del método individual
       return {
@@ -1300,9 +1408,9 @@ export class KommoDatabaseService {
         offset,
         hasMore: offset + limit < result.total,
         stats,
-        query: effectiveParams
+        query: effectiveParams,
       };
-    } else if (effectiveParams.logType === 'change_status') {
+    } else if (effectiveParams.logType === "change_status") {
       const result = await this.getChangeStatusLogs(effectiveParams);
       // Los logs ya vienen paginados del método individual
       return {
@@ -1312,9 +1420,9 @@ export class KommoDatabaseService {
         offset,
         hasMore: offset + limit < result.total,
         stats,
-        query: effectiveParams
+        query: effectiveParams,
       };
-    } else if (effectiveParams.logType === 'bot_actions') {
+    } else if (effectiveParams.logType === "bot_actions") {
       const result = await this.getBotActionsLogs(effectiveParams);
       // Los logs ya vienen paginados del método individual
       return {
@@ -1324,9 +1432,9 @@ export class KommoDatabaseService {
         offset,
         hasMore: offset + limit < result.total,
         stats,
-        query: effectiveParams
+        query: effectiveParams,
       };
-    } else if (effectiveParams.logType === 'send_meta') {
+    } else if (effectiveParams.logType === "send_meta") {
       const result = await this.getSendMetaLogs(effectiveParams);
       // Los logs ya vienen paginados del método individual
       return {
@@ -1336,23 +1444,36 @@ export class KommoDatabaseService {
         offset,
         hasMore: offset + limit < result.total,
         stats,
-        query: effectiveParams
+        query: effectiveParams,
       };
     } else {
       // Consultar todos los tipos y combinar
-      const [messagesResult, statusResult, actionsResult, sendMetaResult] = await Promise.all([
-        this.getReceivedMessagesLogs({ ...effectiveParams, limit: 10000, offset: 0 }), // Obtener más para combinar
-        this.getChangeStatusLogs({ ...effectiveParams, limit: 10000, offset: 0 }),
-        this.getBotActionsLogs({ ...effectiveParams, limit: 10000, offset: 0 }),
-        this.getSendMetaLogs({ ...effectiveParams, limit: 10000, offset: 0 })
-      ]);
+      const [messagesResult, statusResult, actionsResult, sendMetaResult] =
+        await Promise.all([
+          this.getReceivedMessagesLogs({
+            ...effectiveParams,
+            limit: 10000,
+            offset: 0,
+          }), // Obtener más para combinar
+          this.getChangeStatusLogs({
+            ...effectiveParams,
+            limit: 10000,
+            offset: 0,
+          }),
+          this.getBotActionsLogs({
+            ...effectiveParams,
+            limit: 10000,
+            offset: 0,
+          }),
+          this.getSendMetaLogs({ ...effectiveParams, limit: 10000, offset: 0 }),
+        ]);
 
       // Combinar logs
       const combinedLogs = [
         ...messagesResult.logs,
         ...statusResult.logs,
         ...actionsResult.logs,
-        ...sendMetaResult.logs
+        ...sendMetaResult.logs,
       ];
 
       // Ordenar según los parámetros especificados con estabilidad (id como criterio secundario)
@@ -1360,29 +1481,29 @@ export class KommoDatabaseService {
         let aValue: any, bValue: any;
 
         switch (effectiveParams.sortBy) {
-          case 'timestamp':
+          case "timestamp":
             aValue = new Date(a.timestamp).getTime();
             bValue = new Date(b.timestamp).getTime();
             break;
-          case 'userName':
-            aValue = a.userName?.toLowerCase() || '';
-            bValue = b.userName?.toLowerCase() || '';
+          case "userName":
+            aValue = a.userName?.toLowerCase() || "";
+            bValue = b.userName?.toLowerCase() || "";
             break;
-          case 'contactId':
-            aValue = a.contactId?.toLowerCase() || '';
-            bValue = b.contactId?.toLowerCase() || '';
+          case "contactId":
+            aValue = a.contactId?.toLowerCase() || "";
+            bValue = b.contactId?.toLowerCase() || "";
             break;
-          case 'type':
+          case "type":
             aValue = a.type;
             bValue = b.type;
             break;
-          case 'leadId':
-            aValue = a.leadId || '';
-            bValue = b.leadId || '';
+          case "leadId":
+            aValue = a.leadId || "";
+            bValue = b.leadId || "";
             break;
-          case 'extractedCode':
-            aValue = (a as any).extractedCode || '';
-            bValue = (b as any).extractedCode || '';
+          case "extractedCode":
+            aValue = (a as any).extractedCode || "";
+            bValue = (b as any).extractedCode || "";
             break;
           default:
             aValue = new Date(a.timestamp).getTime();
@@ -1390,19 +1511,25 @@ export class KommoDatabaseService {
         }
 
         // Primero comparar por el campo principal
-        if (aValue < bValue) return effectiveParams.sortOrder === 'asc' ? -1 : 1;
-        if (aValue > bValue) return effectiveParams.sortOrder === 'asc' ? 1 : -1;
+        if (aValue < bValue)
+          return effectiveParams.sortOrder === "asc" ? -1 : 1;
+        if (aValue > bValue)
+          return effectiveParams.sortOrder === "asc" ? 1 : -1;
 
         // Si son iguales, usar id como criterio secundario para estabilidad
-        const aId = a.id || '';
-        const bId = b.id || '';
+        const aId = a.id || "";
+        const bId = b.id || "";
         if (aId < bId) return -1;
         if (aId > bId) return 1;
 
         return 0;
       });
 
-      totalCount = messagesResult.total + statusResult.total + actionsResult.total + sendMetaResult.total;
+      totalCount =
+        messagesResult.total +
+        statusResult.total +
+        actionsResult.total +
+        sendMetaResult.total;
     }
 
     // Aplicar paginación al resultado combinado
@@ -1411,7 +1538,7 @@ export class KommoDatabaseService {
     // Asignar índices consecutivos a los logs paginados
     const logsWithIndex = paginatedLogs.map((log, index) => ({
       ...log,
-      index: offset + index + 1
+      index: offset + index + 1,
     }));
 
     return {
@@ -1421,13 +1548,18 @@ export class KommoDatabaseService {
       offset,
       hasMore: offset + limit < totalCount,
       stats,
-      query: effectiveParams
+      query: effectiveParams,
     };
   }
 
   // Servicio para verificar si un mensaje ya fue procesado por la IA en los últimos 30 minutos
-  async isMessageAlreadyProcessed(talkId: string, entityId: string, contactId: string, messageText: string): Promise<boolean> {
-    const collection = await this.getCollection('bot_actions');
+  async isMessageAlreadyProcessed(
+    talkId: string,
+    entityId: string,
+    contactId: string,
+    messageText: string
+  ): Promise<boolean> {
+    const collection = await this.getCollection("bot_actions");
 
     // Calcular la fecha límite (30 minutos atrás)
     const thirtyMinutesAgo = new Date();
@@ -1439,15 +1571,18 @@ export class KommoDatabaseService {
       entityId: entityId,
       contactId: contactId,
       messageText: messageText,
-      createdAt: { $gte: thirtyMinutesAgo.toISOString() }
+      createdAt: { $gte: thirtyMinutesAgo.toISOString() },
     });
 
     return existingBotAction !== null;
   }
 
   // Servicio para verificar si ya se envió una conversión a Meta para este código y tipo de evento en los últimos 30 minutos
-  async isConversionAlreadySent(extractedCode: string, eventName: string): Promise<boolean> {
-    const collection = await this.getCollection('send_meta');
+  async isConversionAlreadySent(
+    extractedCode: string,
+    eventName: string
+  ): Promise<boolean> {
+    const collection = await this.getCollection("send_meta");
 
     // Calcular la fecha límite (30 minutos atrás)
     const thirtyMinutesAgo = new Date();
@@ -1463,8 +1598,8 @@ export class KommoDatabaseService {
         { "conversionData.event_name": eventName },
         // Para arrays con estructura nueva ([0] = ConversacionCRM1, [1] = CargoCRM1)
         { "conversionData.0.data.0.event_name": eventName },
-        { "conversionData.1.data.0.event_name": eventName }
-      ]
+        { "conversionData.1.data.0.event_name": eventName },
+      ],
     });
 
     return existingConversion !== null;
@@ -1485,11 +1620,15 @@ export class KommoDatabaseService {
   /**
    * Crear un nuevo documento de status
    */
-  async createStatus(data: Omit<StatusDocument, '_id' | 'createdAt' | 'updatedAt' | 'kommo_id'>): Promise<StatusDocument> {
-    const collection = await this.getCollection('status');
+  async createStatus(
+    data: Omit<StatusDocument, "_id" | "createdAt" | "updatedAt" | "kommo_id">
+  ): Promise<StatusDocument> {
+    const collection = await this.getCollection("status");
 
     // Verificar si ya existe un status con este statusId
-    const existingStatus = await collection.findOne({ statusId: data.statusId });
+    const existingStatus = await collection.findOne({
+      statusId: data.statusId,
+    });
 
     if (existingStatus) {
       throw new Error(`Ya existe un status con statusId: ${data.statusId}`);
@@ -1497,10 +1636,12 @@ export class KommoDatabaseService {
 
     // Validar color si está presente
     if (data.color && !this.isValidHexColor(data.color)) {
-      throw new Error(`El color debe tener formato hex válido (ej: #FF0000 o #F00)`);
+      throw new Error(
+        `El color debe tener formato hex válido (ej: #FF0000 o #F00)`
+      );
     }
 
-    const statusDocument: Omit<StatusDocument, '_id'> = {
+    const statusDocument: Omit<StatusDocument, "_id"> = {
       ...data,
       kommo_id: null, // Siempre se crea como null inicialmente
       createdAt: getCurrentArgentinaISO(),
@@ -1518,10 +1659,10 @@ export class KommoDatabaseService {
    * Obtener todos los documentos de status
    */
   async getAllStatus(): Promise<StatusDocument[]> {
-    const collection = await this.getCollection('status');
+    const collection = await this.getCollection("status");
     const status = await collection.find({}).sort({ createdAt: -1 }).toArray();
 
-    return status.map(status => ({
+    return status.map((status) => ({
       _id: status._id.toString(),
       statusId: status.statusId,
       name: status.name,
@@ -1529,7 +1670,7 @@ export class KommoDatabaseService {
       kommo_id: status.kommo_id,
       color: status.color,
       createdAt: status.createdAt,
-      updatedAt: status.updatedAt
+      updatedAt: status.updatedAt,
     })) as StatusDocument[];
   }
 
@@ -1537,7 +1678,7 @@ export class KommoDatabaseService {
    * Obtener un documento de status por ID
    */
   async getStatusById(id: string): Promise<StatusDocument | null> {
-    const collection = await this.getCollection('status');
+    const collection = await this.getCollection("status");
     const status = await collection.findOne({ _id: new ObjectId(id) });
 
     if (!status) return null;
@@ -1550,7 +1691,7 @@ export class KommoDatabaseService {
       kommo_id: status.kommo_id,
       color: status.color,
       createdAt: status.createdAt,
-      updatedAt: status.updatedAt
+      updatedAt: status.updatedAt,
     } as StatusDocument;
   }
 
@@ -1558,7 +1699,7 @@ export class KommoDatabaseService {
    * Obtener un documento de status por statusId
    */
   async getStatusByStatusId(statusId: string): Promise<StatusDocument | null> {
-    const collection = await this.getCollection('status');
+    const collection = await this.getCollection("status");
     const status = await collection.findOne({ statusId });
 
     if (!status) return null;
@@ -1571,19 +1712,24 @@ export class KommoDatabaseService {
       kommo_id: status.kommo_id,
       color: status.color,
       createdAt: status.createdAt,
-      updatedAt: status.updatedAt
+      updatedAt: status.updatedAt,
     } as StatusDocument;
   }
 
   /**
    * Actualizar un documento de status por ID
    */
-  async updateStatusById(id: string, updateData: Partial<Omit<StatusDocument, '_id' | 'createdAt'>>): Promise<StatusDocument | null> {
-    const collection = await this.getCollection('status');
+  async updateStatusById(
+    id: string,
+    updateData: Partial<Omit<StatusDocument, "_id" | "createdAt">>
+  ): Promise<StatusDocument | null> {
+    const collection = await this.getCollection("status");
 
     // Validar color si está presente en los datos de actualización
     if (updateData.color && !this.isValidHexColor(updateData.color)) {
-      throw new Error(`El color debe tener formato hex válido (ej: #FF0000 o #F00)`);
+      throw new Error(
+        `El color debe tener formato hex válido (ej: #FF0000 o #F00)`
+      );
     }
 
     const updateDoc = {
@@ -1595,7 +1741,7 @@ export class KommoDatabaseService {
       const result = await collection.findOneAndUpdate(
         { _id: new ObjectId(id) },
         { $set: updateDoc },
-        { returnDocument: 'after' }
+        { returnDocument: "after" }
       );
 
       if (!result) return null;
@@ -1608,7 +1754,7 @@ export class KommoDatabaseService {
         kommo_id: result.kommo_id,
         color: result.color,
         createdAt: result.createdAt,
-        updatedAt: result.updatedAt
+        updatedAt: result.updatedAt,
       } as StatusDocument;
     } catch (error) {
       return null;
@@ -1619,7 +1765,7 @@ export class KommoDatabaseService {
    * Eliminar un documento de status por ID
    */
   async deleteStatusById(id: string): Promise<boolean> {
-    const collection = await this.getCollection('status');
+    const collection = await this.getCollection("status");
 
     try {
       const result = await collection.deleteOne({ _id: new ObjectId(id) });
@@ -1635,16 +1781,16 @@ export class KommoDatabaseService {
    * Obtener todos los documentos de settings
    */
   async getAllSettings(): Promise<SettingsDocument[]> {
-    const collection = await this.getCollection('settings');
+    const collection = await this.getCollection("settings");
     const settings = await collection.find({}).toArray();
 
-    return settings.map(setting => ({
+    return settings.map((setting) => ({
       _id: setting._id.toString(),
       accountCBU: setting.accountCBU,
       context: setting.context,
       message: setting.message,
       createdAt: setting.createdAt,
-      updatedAt: setting.updatedAt
+      updatedAt: setting.updatedAt,
     })) as SettingsDocument[];
   }
 
@@ -1652,7 +1798,7 @@ export class KommoDatabaseService {
    * Obtener un documento de settings por ID
    */
   async getSettingsById(id: string): Promise<SettingsDocument | null> {
-    const collection = await this.getCollection('settings');
+    const collection = await this.getCollection("settings");
     const setting = await collection.findOne({ _id: new ObjectId(id) });
 
     if (!setting) return null;
@@ -1663,15 +1809,18 @@ export class KommoDatabaseService {
       context: setting.context,
       message: setting.message,
       createdAt: setting.createdAt,
-      updatedAt: setting.updatedAt
+      updatedAt: setting.updatedAt,
     } as SettingsDocument;
   }
 
   /**
    * Actualizar un documento de settings por ID
    */
-  async updateSettingsById(id: string, updateData: Partial<Omit<SettingsDocument, '_id'>>): Promise<SettingsDocument | null> {
-    const collection = await this.getCollection('settings');
+  async updateSettingsById(
+    id: string,
+    updateData: Partial<Omit<SettingsDocument, "_id">>
+  ): Promise<SettingsDocument | null> {
+    const collection = await this.getCollection("settings");
 
     const updateDoc = {
       ...updateData,
@@ -1682,7 +1831,7 @@ export class KommoDatabaseService {
       const result = await collection.findOneAndUpdate(
         { _id: new ObjectId(id) },
         { $set: updateDoc },
-        { returnDocument: 'after' }
+        { returnDocument: "after" }
       );
 
       if (!result) return null;
@@ -1693,7 +1842,7 @@ export class KommoDatabaseService {
         context: result.context,
         message: result.message,
         createdAt: result.createdAt,
-        updatedAt: result.updatedAt
+        updatedAt: result.updatedAt,
       } as SettingsDocument;
     } catch (error) {
       return null;
@@ -1705,39 +1854,58 @@ export class KommoDatabaseService {
 export const kommoDatabaseService = KommoDatabaseService.getInstance();
 
 // Funciones de conveniencia para usar los servicios
-export const createUser = (data: Parameters<KommoDatabaseService['createUser']>[0]) =>
-  kommoDatabaseService.createUser(data);
+export const createUser = (
+  data: Parameters<KommoDatabaseService["createUser"]>[0]
+) => kommoDatabaseService.createUser(data);
 
-export const createLead = (data: Parameters<KommoDatabaseService['createLead']>[0]) =>
-  kommoDatabaseService.createLead(data);
+export const createLead = (
+  data: Parameters<KommoDatabaseService["createLead"]>[0]
+) => kommoDatabaseService.createLead(data);
 
-export const createTask = (data: Parameters<KommoDatabaseService['createTask']>[0]) =>
-  kommoDatabaseService.createTask(data);
+export const createTask = (
+  data: Parameters<KommoDatabaseService["createTask"]>[0]
+) => kommoDatabaseService.createTask(data);
 
-export const updateTask = (data: Parameters<KommoDatabaseService['updateTask']>[0]) =>
-  kommoDatabaseService.updateTask(data);
+export const updateTask = (
+  data: Parameters<KommoDatabaseService["updateTask"]>[0]
+) => kommoDatabaseService.updateTask(data);
 
-export const receiveMessage = (data: Parameters<KommoDatabaseService['receiveMessage']>[0]) =>
-  kommoDatabaseService.receiveMessage(data);
+export const receiveMessage = (
+  data: Parameters<KommoDatabaseService["receiveMessage"]>[0]
+) => kommoDatabaseService.receiveMessage(data);
 
-export const createBotAction = (data: Parameters<KommoDatabaseService['createBotAction']>[0]) =>
-  kommoDatabaseService.createBotAction(data);
+export const createBotAction = (
+  data: Parameters<KommoDatabaseService["createBotAction"]>[0]
+) => kommoDatabaseService.createBotAction(data);
 
-export const createTokenVisit = (data: Parameters<KommoDatabaseService['createTokenVisit']>[0]) =>
-  kommoDatabaseService.createTokenVisit(data);
+export const createTokenVisit = (
+  data: Parameters<KommoDatabaseService["createTokenVisit"]>[0]
+) => kommoDatabaseService.createTokenVisit(data);
 
 export const findTokenVisit = (token: string) =>
   kommoDatabaseService.findTokenVisit(token);
 
-export const isMessageAlreadyProcessed = (talkId: string, entityId: string, contactId: string, messageText: string) =>
-  kommoDatabaseService.isMessageAlreadyProcessed(talkId, entityId, contactId, messageText);
+export const isMessageAlreadyProcessed = (
+  talkId: string,
+  entityId: string,
+  contactId: string,
+  messageText: string
+) =>
+  kommoDatabaseService.isMessageAlreadyProcessed(
+    talkId,
+    entityId,
+    contactId,
+    messageText
+  );
 
-export const isConversionAlreadySent = (extractedCode: string, eventName: string) =>
-  kommoDatabaseService.isConversionAlreadySent(extractedCode, eventName);
+export const isConversionAlreadySent = (
+  extractedCode: string,
+  eventName: string
+) => kommoDatabaseService.isConversionAlreadySent(extractedCode, eventName);
 
 // Función helper para convertir fecha a UTC (restando 3 horas para Argentina)
 function convertToUTC(date: Date): Date {
-  return new Date(date.getTime() - (3 * 60 * 60 * 1000));
+  return new Date(date.getTime() - 3 * 60 * 60 * 1000);
 }
 
 // Función utilitaria para extraer código de un mensaje
@@ -1745,7 +1913,8 @@ export function extractCodeFromMessage(messageText: string): string | null {
   console.log("Extrayendo código de mensaje:", messageText);
   // Patrón para buscar códigos generados por nanoid (incluyen guiones y caracteres especiales)
   // Busca patrones como "Descuento: Nv5M-ilY." o "Código: AbCdEfGh-"
-  const codePattern = /(?:descuento|codigo|código|token)\s*:\s*([A-Za-z0-9_-]{1,21})\.?/i;
+  const codePattern =
+    /(?:descuento|codigo|código|token)\s*:\s*([A-Za-z0-9_-]{1,21})\.?/i;
   const match = messageText.match(codePattern);
   console.log("Match del patrón principal:", match);
   if (match && match[1]) {
@@ -1755,8 +1924,8 @@ export function extractCodeFromMessage(messageText: string): string | null {
   // También buscar códigos sueltos generados por nanoid
   // nanoid por defecto genera 21 caracteres, pero podemos buscar patrones más cortos también
   const looseCodePatterns = [
-    /\b([A-Za-z0-9_-]{8,21})\b/,  // Códigos de 8-21 caracteres con guiones
-    /\b([A-Za-z0-9_-]{1,21})\b/,  // Códigos de 1-21 caracteres con guiones
+    /\b([A-Za-z0-9_-]{8,21})\b/, // Códigos de 8-21 caracteres con guiones
+    /\b([A-Za-z0-9_-]{1,21})\b/, // Códigos de 1-21 caracteres con guiones
   ];
 
   for (const pattern of looseCodePatterns) {
@@ -1772,9 +1941,12 @@ export function extractCodeFromMessage(messageText: string): string | null {
 
 // Función de prueba para verificar la detección de códigos
 
-
 // Función para enviar conversión a Meta API
-export async function sendConversionToMeta(leadData: any, accessToken: string, pixelId?: string) {
+export async function sendConversionToMeta(
+  leadData: any,
+  accessToken: string,
+  pixelId?: string
+) {
   try {
     // Determinar el tipo de evento (ConversacionCRM1 por defecto, o el especificado)
     const eventName = leadData.eventName || "ConversacionCRM1";
@@ -1788,15 +1960,18 @@ export async function sendConversionToMeta(leadData: any, accessToken: string, p
           event_name: eventName,
           event_time: Math.floor(Date.now() / 1000),
           action_source: "website",
-          event_source_url: leadData.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
+          event_source_url:
+            leadData.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
           user_data: {
             client_ip_address: leadData.ip ? leadData.ip : undefined,
-            client_user_agent: leadData.userAgent ? leadData.userAgent : undefined,
+            client_user_agent: leadData.userAgent
+              ? leadData.userAgent
+              : undefined,
             fbp: leadData.fbp ? leadData.fbp : undefined,
             fbc: leadData.fbc ? leadData.fbc : undefined,
-          }
-        }
-      ]
+          },
+        },
+      ],
     };
 
     console.log(`Conversion data para ${eventName}:`, conversionData);
@@ -1806,7 +1981,9 @@ export async function sendConversionToMeta(leadData: any, accessToken: string, p
     // Necesitamos el código para verificar duplicados
     const extractedCode = leadData.extractedCode;
     if (extractedCode) {
-      console.log(`🔍 Verificando en DB si ya existe tracking de ${eventName} para código ${extractedCode}`);
+      console.log(
+        `🔍 Verificando en DB si ya existe tracking de ${eventName} para código ${extractedCode}`
+      );
 
       const client = await clientPromise;
       const db = client.db(process.env.MONGODB_DATABASE || "kommo");
@@ -1823,28 +2000,32 @@ export async function sendConversionToMeta(leadData: any, accessToken: string, p
           { "conversionData.0.data.0.event_name": eventName },
           { "conversionData.1.data.0.event_name": eventName },
           // También verificar en conversionResults si existe el evento
-          { "conversionResults.event_name": eventName }
-        ]
+          { "conversionResults.event_name": eventName },
+        ],
       });
 
       if (existingConversion) {
-        console.log(`⚠️ Conversión ${eventName} ya existe en DB para código ${extractedCode}, omitiendo envío duplicado`);
+        console.log(
+          `⚠️ Conversión ${eventName} ya existe en DB para código ${extractedCode}, omitiendo envío duplicado`
+        );
         return {
           success: false,
           error: "DUPLICATE_CONVERSION",
-          message: `Conversión ya enviada anteriormente para código ${extractedCode}`
+          message: `Conversión ya enviada anteriormente para código ${extractedCode}`,
         };
       }
 
-      console.log(`✅ No se encontró conversión previa para ${eventName} código ${extractedCode}, procediendo con envío`);
+      console.log(
+        `✅ No se encontró conversión previa para ${eventName} código ${extractedCode}, procediendo con envío`
+      );
     }
 
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${pixel}/events?access_token=${accessToken}`,
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(conversionData),
       }
@@ -1861,7 +2042,10 @@ export async function sendConversionToMeta(leadData: any, accessToken: string, p
     }
   } catch (error) {
     console.error("❌ Error en sendConversionToMeta:", error);
-    return { success: false, error: error instanceof Error ? error.message : "Error desconocido" };
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Error desconocido",
+    };
   }
 }
 
@@ -1881,15 +2065,21 @@ export async function saveSendMetaRecord(
     const utcTimestamp = convertToUTC(new Date());
 
     // Buscar si ya existe un registro para este código
-    const existingRecord = await collection.findOne({ extractedCode: extractedCode });
+    const existingRecord = await collection.findOne({
+      extractedCode: extractedCode,
+    });
 
     if (existingRecord) {
       // Si existe, hacer push/update del array existente
-      console.log(`🔄 Actualizando registro existente para código: ${extractedCode}`);
+      console.log(
+        `🔄 Actualizando registro existente para código: ${extractedCode}`
+      );
 
       // Combinar los arrays existentes con los nuevos
       const updatedConversionData = [...(existingRecord.conversionData || [])];
-      const updatedConversionResults = [...(existingRecord.conversionResults || [])];
+      const updatedConversionResults = [
+        ...(existingRecord.conversionResults || []),
+      ];
 
       // Actualizar las posiciones del array
       conversionDataArray.forEach((data, index) => {
@@ -1908,22 +2098,26 @@ export async function saveSendMetaRecord(
         conversionData: updatedConversionData,
         conversionResults: updatedConversionResults,
         timestamp: utcTimestamp,
-        success: updatedConversionResults.some(result => result && result.success),
+        success: updatedConversionResults.some(
+          (result) => result && result.success
+        ),
         // Actualizar messageData si viene de un evento diferente
-        ...(messageData && { messageData: {
-          id: messageData.id,
-          chatId: messageData.chat_id || messageData.chatId,
-          talkId: messageData.talk_id || messageData.talkId,
-          contactId: messageData.contact_id || messageData.contactId,
-          text: messageData.text,
-          createdAt: messageData.created_at || messageData.createdAt,
-          elementType: messageData.element_type || messageData.elementType,
-          entityType: messageData.entity_type || messageData.entityType,
-          elementId: messageData.element_id || messageData.elementId,
-          entityId: messageData.entity_id || messageData.entityId,
-          type: messageData.type,
-          author: messageData.author
-        }})
+        ...(messageData && {
+          messageData: {
+            id: messageData.id,
+            chatId: messageData.chat_id || messageData.chatId,
+            talkId: messageData.talk_id || messageData.talkId,
+            contactId: messageData.contact_id || messageData.contactId,
+            text: messageData.text,
+            createdAt: messageData.created_at || messageData.createdAt,
+            elementType: messageData.element_type || messageData.elementType,
+            entityType: messageData.entity_type || messageData.entityType,
+            elementId: messageData.element_id || messageData.elementId,
+            entityId: messageData.entity_id || messageData.entityId,
+            type: messageData.type,
+            author: messageData.author,
+          },
+        }),
       };
 
       const result = await collection.updateOne(
@@ -1935,24 +2129,29 @@ export async function saveSendMetaRecord(
 
       // Actualizar el lead correspondiente con meta_data actualizada
       if (messageData?.entityId || existingRecord.messageData?.entityId) {
-        const entityId = messageData?.entityId || existingRecord.messageData?.entityId;
+        const entityId =
+          messageData?.entityId || existingRecord.messageData?.entityId;
         const leadsCollection = db.collection("leads");
 
         // Obtener el registro actualizado para guardar en meta_data
-        const updatedRecord = await collection.findOne({ extractedCode: extractedCode });
+        const updatedRecord = await collection.findOne({
+          extractedCode: extractedCode,
+        });
 
         const updateResult = await leadsCollection.updateOne(
           { leadId: entityId },
           {
             $set: {
               meta_data: updatedRecord,
-              updatedAt: utcTimestamp
-            }
+              updatedAt: utcTimestamp,
+            },
           }
         );
 
         if (updateResult.matchedCount > 0) {
-          console.log(`✅ Lead actualizado con meta_data para entityId: ${entityId}`);
+          console.log(
+            `✅ Lead actualizado con meta_data para entityId: ${entityId}`
+          );
         } else {
           console.log(`⚠️ No se encontró lead con entityId: ${entityId}`);
         }
@@ -1978,13 +2177,13 @@ export async function saveSendMetaRecord(
           elementId: messageData.element_id || messageData.elementId,
           entityId: messageData.entity_id || messageData.entityId,
           type: messageData.type,
-          author: messageData.author
+          author: messageData.author,
         },
         // Información adicional
         extractedCode: extractedCode,
         conversionResults: conversionResults,
         timestamp: utcTimestamp,
-        success: conversionResults.some(result => result && result.success)
+        success: conversionResults.some((result) => result && result.success),
       };
 
       const result = await collection.insertOne(record);
@@ -1998,15 +2197,19 @@ export async function saveSendMetaRecord(
           {
             $set: {
               meta_data: record,
-              updatedAt: utcTimestamp
-            }
+              updatedAt: utcTimestamp,
+            },
           }
         );
 
         if (updateResult.matchedCount > 0) {
-          console.log(`✅ Lead actualizado con meta_data para entityId: ${record.messageData.entityId}`);
+          console.log(
+            `✅ Lead actualizado con meta_data para entityId: ${record.messageData.entityId}`
+          );
         } else {
-          console.log(`⚠️ No se encontró lead con entityId: ${record.messageData.entityId}`);
+          console.log(
+            `⚠️ No se encontró lead con entityId: ${record.messageData.entityId}`
+          );
         }
       }
 
@@ -2016,7 +2219,7 @@ export async function saveSendMetaRecord(
     console.error("❌ Error al guardar en send_meta:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Error desconocido"
+      error: error instanceof Error ? error.message : "Error desconocido",
     };
   }
 }
@@ -2051,7 +2254,10 @@ export async function findContactById(contactId: string) {
 }
 
 // Función para crear lead desde datos de la API de Kommo
-export async function createLeadFromKommoApi(kommoLeadData: any, kommoContactData?: any) {
+export async function createLeadFromKommoApi(
+  kommoLeadData: any,
+  kommoContactData?: any
+) {
   try {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DATABASE || "kommo");
@@ -2062,12 +2268,17 @@ export async function createLeadFromKommoApi(kommoLeadData: any, kommoContactDat
     // Verificar si ya existe un lead con este leadId
     const existingLead = await collection.findOne({ leadId: leadId });
     if (existingLead) {
-      console.log(`⚠️ Lead ${leadId} ya existe localmente, omitiendo creación duplicada`);
+      console.log(
+        `⚠️ Lead ${leadId} ya existe localmente, omitiendo creación duplicada`
+      );
       return existingLead;
     }
 
     // Obtener el contactId real del lead
-    const realContactId = kommoLeadData._embedded?.contacts?.[0]?.id?.toString() || kommoContactData?.id?.toString() || "unknown";
+    const realContactId =
+      kommoLeadData._embedded?.contacts?.[0]?.id?.toString() ||
+      kommoContactData?.id?.toString() ||
+      "unknown";
 
     const leadDocument: LeadDocument = {
       uid: `lead_${kommoLeadData.id}_${Date.now()}`,
@@ -2080,11 +2291,13 @@ export async function createLeadFromKommoApi(kommoLeadData: any, kommoContactDat
       createdAt: convertToArgentinaISO(kommoLeadData.created_at),
       client: {
         name: kommoContactData?.name || kommoLeadData.name || "Unknown",
-        id: realContactId
+        id: realContactId,
       },
       messageText: `Lead sincronizado desde API: ${kommoLeadData.name}`,
       sourceName: "kommo_api_sync",
-      updatedAt: convertToArgentinaISO(kommoLeadData.updated_at || kommoLeadData.created_at)
+      updatedAt: convertToArgentinaISO(
+        kommoLeadData.updated_at || kommoLeadData.created_at
+      ),
     };
 
     const { _id, ...leadData } = leadDocument;
@@ -2120,7 +2333,9 @@ export async function createContactFromKommoApi(kommoContactData: any) {
     // Verificar si ya existe un contacto con este contactId
     const existingContact = await collection.findOne({ contactId: contactId });
     if (existingContact) {
-      console.log(`⚠️ Contacto ${contactId} ya existe localmente, omitiendo creación duplicada`);
+      console.log(
+        `⚠️ Contacto ${contactId} ya existe localmente, omitiendo creación duplicada`
+      );
       return existingContact;
     }
 
@@ -2134,7 +2349,9 @@ export async function createContactFromKommoApi(kommoContactData: any) {
       sourceName: "kommo_api",
       messageText: `Contacto sincronizado desde API: ${kommoContactData.name}`,
       createdAt: convertToArgentinaISO(kommoContactData.created_at),
-      updatedAt: convertToArgentinaISO(kommoContactData.updated_at || kommoContactData.created_at)
+      updatedAt: convertToArgentinaISO(
+        kommoContactData.updated_at || kommoContactData.created_at
+      ),
     };
 
     const { _id, ...userData } = userDocument;
@@ -2151,21 +2368,22 @@ export const getContactContext = (contactId: string) =>
   kommoDatabaseService.getContactContext(contactId);
 
 // Funciones de conveniencia para settings
-export const getAllSettings = () =>
-  kommoDatabaseService.getAllSettings();
+export const getAllSettings = () => kommoDatabaseService.getAllSettings();
 
 export const getSettingsById = (id: string) =>
   kommoDatabaseService.getSettingsById(id);
 
-export const updateSettingsById = (id: string, updateData: Partial<Omit<SettingsDocument, '_id'>>) =>
-  kommoDatabaseService.updateSettingsById(id, updateData);
+export const updateSettingsById = (
+  id: string,
+  updateData: Partial<Omit<SettingsDocument, "_id">>
+) => kommoDatabaseService.updateSettingsById(id, updateData);
 
 // Funciones de conveniencia para status
-export const createStatus = (data: Omit<StatusDocument, '_id' | 'createdAt' | 'updatedAt' | 'kommo_id'>) =>
-  kommoDatabaseService.createStatus(data);
+export const createStatus = (
+  data: Omit<StatusDocument, "_id" | "createdAt" | "updatedAt" | "kommo_id">
+) => kommoDatabaseService.createStatus(data);
 
-export const getAllStatus = () =>
-  kommoDatabaseService.getAllStatus();
+export const getAllStatus = () => kommoDatabaseService.getAllStatus();
 
 export const getStatusById = (id: string) =>
   kommoDatabaseService.getStatusById(id);
@@ -2173,8 +2391,10 @@ export const getStatusById = (id: string) =>
 export const getStatusByStatusId = (statusId: string) =>
   kommoDatabaseService.getStatusByStatusId(statusId);
 
-export const updateStatusById = (id: string, updateData: Partial<Omit<StatusDocument, '_id' | 'createdAt'>>) =>
-  kommoDatabaseService.updateStatusById(id, updateData);
+export const updateStatusById = (
+  id: string,
+  updateData: Partial<Omit<StatusDocument, "_id" | "createdAt">>
+) => kommoDatabaseService.updateStatusById(id, updateData);
 
 export const deleteStatusById = (id: string) =>
   kommoDatabaseService.deleteStatusById(id);
@@ -2197,7 +2417,11 @@ export const getConsolidatedLogs = (params: LogsQueryParams) =>
 
 // ===== TIPOS PARA LOGS CONSOLIDADOS =====
 
-export type LogType = 'received_messages' | 'change_status' | 'bot_actions' | 'send_meta';
+export type LogType =
+  | "received_messages"
+  | "change_status"
+  | "bot_actions"
+  | "send_meta";
 
 export interface BaseLogEntry {
   index: number;
@@ -2213,26 +2437,26 @@ export interface BaseLogEntry {
 }
 
 export interface ReceivedMessageLog extends BaseLogEntry {
-  type: 'received_messages';
+  type: "received_messages";
   messageText: string;
-  messageType: 'incoming' | 'outgoing';
+  messageType: "incoming" | "outgoing";
   authorName: string;
   messageId: string;
   chatId: string;
 }
 
 export interface ChangeStatusLog extends BaseLogEntry {
-  type: 'change_status';
+  type: "change_status";
   oldStatus?: string;
   newStatus: string;
-  changedBy: 'bot' | 'manual' | 'system';
+  changedBy: "bot" | "manual" | "system";
   reason?: string;
   confidence?: number;
   success: boolean;
 }
 
 export interface BotActionLog extends BaseLogEntry {
-  type: 'bot_actions';
+  type: "bot_actions";
   messageText: string;
   aiDecision: {
     currentStatus: string;
@@ -2249,7 +2473,7 @@ export interface BotActionLog extends BaseLogEntry {
 }
 
 export interface SendMetaLog extends BaseLogEntry {
-  type: 'send_meta';
+  type: "send_meta";
   extractedCode: string;
   conversionData: Array<{
     data: Array<{
@@ -2274,7 +2498,11 @@ export interface SendMetaLog extends BaseLogEntry {
   success: boolean;
 }
 
-export type LogEntry = ReceivedMessageLog | ChangeStatusLog | BotActionLog | SendMetaLog;
+export type LogEntry =
+  | ReceivedMessageLog
+  | ChangeStatusLog
+  | BotActionLog
+  | SendMetaLog;
 
 // Parámetros de consulta para logs
 export interface LogsQueryParams {
@@ -2289,11 +2517,17 @@ export interface LogsQueryParams {
   clientId?: string;
   sourceName?: string;
   status?: string;
-  changedBy?: 'bot' | 'manual' | 'system';
+  changedBy?: "bot" | "manual" | "system";
   limit?: number;
   offset?: number;
-    sortBy?: 'timestamp' | 'userName' | 'contactId' | 'type' | 'leadId' | 'extractedCode';
-  sortOrder?: 'asc' | 'desc';
+  sortBy?:
+    | "timestamp"
+    | "userName"
+    | "contactId"
+    | "type"
+    | "leadId"
+    | "extractedCode";
+  sortOrder?: "asc" | "desc";
 }
 
 // Respuesta del endpoint de logs
@@ -2324,7 +2558,7 @@ export interface RuleDocument {
   crm: string; // Sistema CRM utilizado
   pipeline: string; // Pipeline donde se aplica
   priority: number; // Prioridad de la regla
-  status: 'active' | 'inactive' | 'draft'; // Estado de la regla
+  status: "active" | "inactive" | "draft"; // Estado de la regla
 }
 
 // Parámetros de consulta para rules
@@ -2335,12 +2569,12 @@ export interface RulesQueryParams {
   text?: string;
   crm?: string;
   pipeline?: string;
-  status?: 'active' | 'inactive' | 'draft';
+  status?: "active" | "inactive" | "draft";
   priority?: number;
   limit?: number;
   offset?: number;
-  sortBy?: 'createdAt' | 'updatedAt' | 'rule' | 'priority' | 'status';
-  sortOrder?: 'asc' | 'desc';
+  sortBy?: "createdAt" | "updatedAt" | "rule" | "priority" | "status";
+  sortOrder?: "asc" | "desc";
 }
 
 // Respuesta del endpoint de rules
@@ -2358,13 +2592,15 @@ export interface RulesResponse {
 /**
  * Crear una nueva regla
  */
-export async function createRule(ruleData: Omit<RuleDocument, '_id' | 'createdAt' | 'updatedAt'>): Promise<RuleDocument> {
+export async function createRule(
+  ruleData: Omit<RuleDocument, "_id" | "createdAt" | "updatedAt">
+): Promise<RuleDocument> {
   const client = await clientPromise;
-  const db = client.db('kommo');
-  const collection = db.collection<RuleDocument>('rules');
+  const db = client.db("kommo");
+  const collection = db.collection<RuleDocument>("rules");
 
-  const now = new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString();
-  const ruleDocument: Omit<RuleDocument, '_id'> = {
+  const now = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  const ruleDocument: Omit<RuleDocument, "_id"> = {
     ...ruleData,
     createdAt: now,
     updatedAt: now,
@@ -2380,10 +2616,12 @@ export async function createRule(ruleData: Omit<RuleDocument, '_id' | 'createdAt
 /**
  * Obtener todas las reglas con filtros opcionales
  */
-export async function getRules(params: RulesQueryParams = {}): Promise<RulesResponse> {
+export async function getRules(
+  params: RulesQueryParams = {}
+): Promise<RulesResponse> {
   const client = await clientPromise;
-  const db = client.db('kommo');
-  const collection = db.collection<RuleDocument>('rules');
+  const db = client.db("kommo");
+  const collection = db.collection<RuleDocument>("rules");
 
   // Construir query de filtrado
   const query: any = {};
@@ -2394,8 +2632,8 @@ export async function getRules(params: RulesQueryParams = {}): Promise<RulesResp
     if (params.endDate) query.createdAt.$lte = params.endDate;
   }
 
-  if (params.rule) query.rule = { $regex: params.rule, $options: 'i' };
-  if (params.text) query.text = { $regex: params.text, $options: 'i' };
+  if (params.rule) query.rule = { $regex: params.rule, $options: "i" };
+  if (params.text) query.text = { $regex: params.text, $options: "i" };
   if (params.crm) query.crm = params.crm;
   if (params.pipeline) query.pipeline = params.pipeline;
   if (params.status) query.status = params.status;
@@ -2406,8 +2644,8 @@ export async function getRules(params: RulesQueryParams = {}): Promise<RulesResp
   const offset = params.offset || 0;
 
   // Ordenamiento
-  const sortBy = params.sortBy || 'createdAt';
-  const sortOrder = params.sortOrder === 'asc' ? 1 : -1;
+  const sortBy = params.sortBy || "createdAt";
+  const sortOrder = params.sortOrder === "asc" ? 1 : -1;
   const sort: any = {};
   sort[sortBy] = sortOrder;
 
@@ -2437,8 +2675,8 @@ export async function getRules(params: RulesQueryParams = {}): Promise<RulesResp
  */
 export async function getRuleById(id: string): Promise<RuleDocument | null> {
   const client = await clientPromise;
-  const db = client.db('kommo');
-  const collection = db.collection<RuleDocument>('rules');
+  const db = client.db("kommo");
+  const collection = db.collection<RuleDocument>("rules");
 
   try {
     const rule = await collection.findOne({ _id: new ObjectId(id) });
@@ -2451,10 +2689,12 @@ export async function getRuleById(id: string): Promise<RuleDocument | null> {
 /**
  * Obtener una regla por número de regla
  */
-export async function getRuleByRuleNumber(ruleNumber: string): Promise<RuleDocument | null> {
+export async function getRuleByRuleNumber(
+  ruleNumber: string
+): Promise<RuleDocument | null> {
   const client = await clientPromise;
-  const db = client.db('kommo');
-  const collection = db.collection<RuleDocument>('rules');
+  const db = client.db("kommo");
+  const collection = db.collection<RuleDocument>("rules");
 
   return await collection.findOne({ rule: ruleNumber });
 }
@@ -2462,21 +2702,24 @@ export async function getRuleByRuleNumber(ruleNumber: string): Promise<RuleDocum
 /**
  * Actualizar una regla por ID
  */
-export async function updateRule(id: string, updateData: Partial<Omit<RuleDocument, '_id' | 'createdAt'>>): Promise<RuleDocument | null> {
+export async function updateRule(
+  id: string,
+  updateData: Partial<Omit<RuleDocument, "_id" | "createdAt">>
+): Promise<RuleDocument | null> {
   const client = await clientPromise;
-  const db = client.db('kommo');
-  const collection = db.collection<RuleDocument>('rules');
+  const db = client.db("kommo");
+  const collection = db.collection<RuleDocument>("rules");
 
   const updateDoc = {
     ...updateData,
-    updatedAt: new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString(),
+    updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
   };
 
   try {
     const result = await collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updateDoc },
-      { returnDocument: 'after' }
+      { returnDocument: "after" }
     );
     return result;
   } catch (error) {
@@ -2487,20 +2730,23 @@ export async function updateRule(id: string, updateData: Partial<Omit<RuleDocume
 /**
  * Actualizar una regla por número de regla
  */
-export async function updateRuleByRuleNumber(ruleNumber: string, updateData: Partial<Omit<RuleDocument, '_id' | 'createdAt'>>): Promise<RuleDocument | null> {
+export async function updateRuleByRuleNumber(
+  ruleNumber: string,
+  updateData: Partial<Omit<RuleDocument, "_id" | "createdAt">>
+): Promise<RuleDocument | null> {
   const client = await clientPromise;
-  const db = client.db('kommo');
-  const collection = db.collection<RuleDocument>('rules');
+  const db = client.db("kommo");
+  const collection = db.collection<RuleDocument>("rules");
 
   const updateDoc = {
     ...updateData,
-    updatedAt: new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString(),
+    updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
   };
 
   const result = await collection.findOneAndUpdate(
     { rule: ruleNumber },
     { $set: updateDoc },
-    { returnDocument: 'after' }
+    { returnDocument: "after" }
   );
 
   return result;
@@ -2511,8 +2757,8 @@ export async function updateRuleByRuleNumber(ruleNumber: string, updateData: Par
  */
 export async function deleteRule(id: string): Promise<boolean> {
   const client = await clientPromise;
-  const db = client.db('kommo');
-  const collection = db.collection<RuleDocument>('rules');
+  const db = client.db("kommo");
+  const collection = db.collection<RuleDocument>("rules");
 
   try {
     const result = await collection.deleteOne({ _id: new ObjectId(id) });
@@ -2525,10 +2771,12 @@ export async function deleteRule(id: string): Promise<boolean> {
 /**
  * Eliminar una regla por número de regla
  */
-export async function deleteRuleByRuleNumber(ruleNumber: string): Promise<boolean> {
+export async function deleteRuleByRuleNumber(
+  ruleNumber: string
+): Promise<boolean> {
   const client = await clientPromise;
-  const db = client.db('kommo');
-  const collection = db.collection<RuleDocument>('rules');
+  const db = client.db("kommo");
+  const collection = db.collection<RuleDocument>("rules");
 
   const result = await collection.deleteOne({ rule: ruleNumber });
   return result.deletedCount > 0;
@@ -2537,12 +2785,15 @@ export async function deleteRuleByRuleNumber(ruleNumber: string): Promise<boolea
 /**
  * Obtener reglas por CRM
  */
-export async function getRulesByCrm(crm: string, params: Partial<RulesQueryParams> = {}): Promise<RulesResponse> {
+export async function getRulesByCrm(
+  crm: string,
+  params: Partial<RulesQueryParams> = {}
+): Promise<RulesResponse> {
   return getRules({
     crm,
     limit: 50,
-    sortBy: 'priority',
-    sortOrder: 'desc',
+    sortBy: "priority",
+    sortOrder: "desc",
     ...params,
   });
 }
@@ -2550,12 +2801,15 @@ export async function getRulesByCrm(crm: string, params: Partial<RulesQueryParam
 /**
  * Obtener reglas por pipeline
  */
-export async function getRulesByPipeline(pipeline: string, params: Partial<RulesQueryParams> = {}): Promise<RulesResponse> {
+export async function getRulesByPipeline(
+  pipeline: string,
+  params: Partial<RulesQueryParams> = {}
+): Promise<RulesResponse> {
   return getRules({
     pipeline,
     limit: 50,
-    sortBy: 'priority',
-    sortOrder: 'desc',
+    sortBy: "priority",
+    sortOrder: "desc",
     ...params,
   });
 }
@@ -2563,22 +2817,26 @@ export async function getRulesByPipeline(pipeline: string, params: Partial<Rules
 /**
  * Normalizar reglas para uso en AI (solo priority y rule)
  */
-export function normalizeRulesForAI(rules: RuleDocument[]): Array<{ priority: number; rule: string }> {
-  return rules.map(rule => ({
+export function normalizeRulesForAI(
+  rules: RuleDocument[]
+): Array<{ priority: number; rule: string }> {
+  return rules.map((rule) => ({
     priority: rule.priority,
-    rule: rule.rule
-  }))
+    rule: rule.rule,
+  }));
 }
 
 /**
  * Obtener reglas activas
  */
-export async function getActiveRules(params: Partial<RulesQueryParams> = {}): Promise<RulesResponse> {
+export async function getActiveRules(
+  params: Partial<RulesQueryParams> = {}
+): Promise<RulesResponse> {
   return getRules({
-    status: 'active',
+    status: "active",
     limit: 50,
-    sortBy: 'priority',
-    sortOrder: 'desc',
+    sortBy: "priority",
+    sortOrder: "desc",
     ...params,
   });
 }
@@ -2586,7 +2844,103 @@ export async function getActiveRules(params: Partial<RulesQueryParams> = {}): Pr
 /**
  * Obtener reglas activas normalizadas para AI
  */
-export async function getActiveRulesForAI(params: Partial<RulesQueryParams> = {}): Promise<Array<{ priority: number; rule: string }>> {
-  const response = await getActiveRules(params)
-  return normalizeRulesForAI(response.rules)
+export async function getActiveRulesForAI(
+  params: Partial<RulesQueryParams> = {}
+): Promise<Array<{ priority: number; rule: string }>> {
+  const response = await getActiveRules(params);
+  return normalizeRulesForAI(response.rules);
+}
+
+/**
+ * Función para detectar si un mensaje es de bienvenida y lanzar el bot de Kommo
+ */
+export async function detectAndLaunchWelcomeBot(
+  messageText: string,
+  entityId: string,
+  settings: SettingsDocument | null
+): Promise<{ launched: boolean; error?: string }> {
+  try {
+    // Verificar si tenemos settings y mensaje de bienvenida configurado
+    if (!settings || !settings.message) {
+      logWelcomeBotSkipped(
+        messageText,
+        "No hay settings o mensaje de bienvenida configurado",
+        entityId
+      );
+      return {
+        launched: false,
+        error: "No settings or welcome message configured",
+      };
+    }
+
+    // Normalizar textos para comparación (quitar espacios extra, convertir a minúsculas)
+    const normalizedMessage = messageText.trim().toLowerCase();
+    const normalizedWelcomeMessage = settings.message.trim().toLowerCase();
+
+    // Verificar si el mensaje coincide con el mensaje de bienvenida
+    // Usamos una comparación flexible que permite variaciones menores
+    const isWelcomeMessage =
+      normalizedMessage.includes(normalizedWelcomeMessage) ||
+      normalizedWelcomeMessage.includes(normalizedMessage) ||
+      // También verificar si contiene palabras clave del mensaje de bienvenida
+      normalizedWelcomeMessage
+        .split(" ")
+        .some((word) => word.length > 3 && normalizedMessage.includes(word));
+
+    if (!isWelcomeMessage) {
+      logWelcomeBotSkipped(
+        messageText,
+        "Mensaje no identificado como de bienvenida",
+        entityId
+      );
+      return { launched: false, error: "Message is not a welcome message" };
+    }
+
+    logWelcomeBotDetection(messageText, entityId);
+
+    // Preparar el payload para el POST request
+    const payload = {
+      launch: {
+        bot_id: 85766,
+        entity_id: parseInt(entityId),
+        entity_type: 2,
+      },
+    };
+
+    // Hacer el POST request a la API de Kommo
+    const response = await fetch(
+      "https://eduardotobiasdiaz.kommo.com/api/v2/salesbot/run",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Agregar cualquier header de autenticación necesario
+          Authorization: `Bearer ${process.env.KOMMO_ACCESS_TOKEN}`, // Si es necesario
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logWelcomeBotError(entityId, `HTTP ${response.status}: ${errorText}`);
+      return {
+        launched: false,
+        error: `HTTP ${response.status}: ${errorText}`,
+      };
+    }
+
+    const result = await response.json();
+    logWelcomeBotLaunched(entityId, 85766);
+
+    return { launched: true };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    logWelcomeBotError(entityId, errorMessage);
+    return {
+      launched: false,
+      error: errorMessage,
+    };
+  }
 }
