@@ -122,6 +122,18 @@ export interface SettingsDocument {
   updatedAt?: string;
 }
 
+// Interface para documentos de status
+export interface StatusDocument {
+  _id?: string;
+  statusId: string;
+  name: string;
+  description: string;
+  kommo_id: string | null;
+  color?: string; // Color en formato hex (opcional)
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Interfaz para el contexto histórico de un contacto
 export interface ContactContext {
   contactId: string;
@@ -1458,6 +1470,165 @@ export class KommoDatabaseService {
     return existingConversion !== null;
   }
 
+  // ===== FUNCIONES HELPER PARA STATUS =====
+
+  /**
+   * Validar si un string es un color hex válido
+   */
+  private isValidHexColor(color: string): boolean {
+    const hexRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+    return hexRegex.test(color);
+  }
+
+  // ===== MÉTODOS PARA STATUS =====
+
+  /**
+   * Crear un nuevo documento de status
+   */
+  async createStatus(data: Omit<StatusDocument, '_id' | 'createdAt' | 'updatedAt' | 'kommo_id'>): Promise<StatusDocument> {
+    const collection = await this.getCollection('status');
+
+    // Verificar si ya existe un status con este statusId
+    const existingStatus = await collection.findOne({ statusId: data.statusId });
+
+    if (existingStatus) {
+      throw new Error(`Ya existe un status con statusId: ${data.statusId}`);
+    }
+
+    // Validar color si está presente
+    if (data.color && !this.isValidHexColor(data.color)) {
+      throw new Error(`El color debe tener formato hex válido (ej: #FF0000 o #F00)`);
+    }
+
+    const statusDocument: Omit<StatusDocument, '_id'> = {
+      ...data,
+      kommo_id: null, // Siempre se crea como null inicialmente
+      createdAt: getCurrentArgentinaISO(),
+      updatedAt: getCurrentArgentinaISO(),
+    };
+
+    const result = await collection.insertOne(statusDocument);
+    return {
+      _id: result.insertedId.toString(),
+      ...statusDocument,
+    } as StatusDocument;
+  }
+
+  /**
+   * Obtener todos los documentos de status
+   */
+  async getAllStatus(): Promise<StatusDocument[]> {
+    const collection = await this.getCollection('status');
+    const status = await collection.find({}).sort({ createdAt: -1 }).toArray();
+
+    return status.map(status => ({
+      _id: status._id.toString(),
+      statusId: status.statusId,
+      name: status.name,
+      description: status.description,
+      kommo_id: status.kommo_id,
+      color: status.color,
+      createdAt: status.createdAt,
+      updatedAt: status.updatedAt
+    })) as StatusDocument[];
+  }
+
+  /**
+   * Obtener un documento de status por ID
+   */
+  async getStatusById(id: string): Promise<StatusDocument | null> {
+    const collection = await this.getCollection('status');
+    const status = await collection.findOne({ _id: new ObjectId(id) });
+
+    if (!status) return null;
+
+    return {
+      _id: status._id.toString(),
+      statusId: status.statusId,
+      name: status.name,
+      description: status.description,
+      kommo_id: status.kommo_id,
+      color: status.color,
+      createdAt: status.createdAt,
+      updatedAt: status.updatedAt
+    } as StatusDocument;
+  }
+
+  /**
+   * Obtener un documento de status por statusId
+   */
+  async getStatusByStatusId(statusId: string): Promise<StatusDocument | null> {
+    const collection = await this.getCollection('status');
+    const status = await collection.findOne({ statusId });
+
+    if (!status) return null;
+
+    return {
+      _id: status._id.toString(),
+      statusId: status.statusId,
+      name: status.name,
+      description: status.description,
+      kommo_id: status.kommo_id,
+      color: status.color,
+      createdAt: status.createdAt,
+      updatedAt: status.updatedAt
+    } as StatusDocument;
+  }
+
+  /**
+   * Actualizar un documento de status por ID
+   */
+  async updateStatusById(id: string, updateData: Partial<Omit<StatusDocument, '_id' | 'createdAt'>>): Promise<StatusDocument | null> {
+    const collection = await this.getCollection('status');
+
+    // Validar color si está presente en los datos de actualización
+    if (updateData.color && !this.isValidHexColor(updateData.color)) {
+      throw new Error(`El color debe tener formato hex válido (ej: #FF0000 o #F00)`);
+    }
+
+    const updateDoc = {
+      ...updateData,
+      updatedAt: getCurrentArgentinaISO(),
+    };
+
+    try {
+      const result = await collection.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        { $set: updateDoc },
+        { returnDocument: 'after' }
+      );
+
+      if (!result) return null;
+
+      return {
+        _id: result._id.toString(),
+        statusId: result.statusId,
+        name: result.name,
+        description: result.description,
+        kommo_id: result.kommo_id,
+        color: result.color,
+        createdAt: result.createdAt,
+        updatedAt: result.updatedAt
+      } as StatusDocument;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Eliminar un documento de status por ID
+   */
+  async deleteStatusById(id: string): Promise<boolean> {
+    const collection = await this.getCollection('status');
+
+    try {
+      const result = await collection.deleteOne({ _id: new ObjectId(id) });
+      return result.deletedCount > 0;
+    } catch (error) {
+      return false;
+    }
+  }
+
   // ===== MÉTODOS PARA SETTINGS =====
 
   /**
@@ -1988,6 +2159,25 @@ export const getSettingsById = (id: string) =>
 
 export const updateSettingsById = (id: string, updateData: Partial<Omit<SettingsDocument, '_id'>>) =>
   kommoDatabaseService.updateSettingsById(id, updateData);
+
+// Funciones de conveniencia para status
+export const createStatus = (data: Omit<StatusDocument, '_id' | 'createdAt' | 'updatedAt' | 'kommo_id'>) =>
+  kommoDatabaseService.createStatus(data);
+
+export const getAllStatus = () =>
+  kommoDatabaseService.getAllStatus();
+
+export const getStatusById = (id: string) =>
+  kommoDatabaseService.getStatusById(id);
+
+export const getStatusByStatusId = (statusId: string) =>
+  kommoDatabaseService.getStatusByStatusId(statusId);
+
+export const updateStatusById = (id: string, updateData: Partial<Omit<StatusDocument, '_id' | 'createdAt'>>) =>
+  kommoDatabaseService.updateStatusById(id, updateData);
+
+export const deleteStatusById = (id: string) =>
+  kommoDatabaseService.deleteStatusById(id);
 
 // Funciones de conveniencia para logs
 export const getReceivedMessagesLogs = (params: LogsQueryParams) =>

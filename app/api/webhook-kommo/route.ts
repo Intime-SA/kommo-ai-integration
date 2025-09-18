@@ -17,7 +17,7 @@ import {
   logWebhookError,
   logLeadStatusChange
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI, getSettingsById, SettingsDocument, getAllStatus, StatusDocument } from "@/lib/mongodb-services"
 import { getLeadInfo, getContactInfo } from "@/lib/kommo-api"
 import type { KommoApiConfig } from "@/lib/kommo-api"
 
@@ -1038,8 +1038,21 @@ export async function POST(request: NextRequest) {
           // Continuar sin reglas si hay error (array vacío)
         }
 
+        let settings: SettingsDocument | null = null
+        try {
+          settings = await getSettingsById("68cac5f6b9cdc9045002b98d")
+        } catch (settingsError) {
+          logWebhookError(settingsError, "obteniendo settings")
+        }
+
+        let statuses: StatusDocument[] | null = null
+        try {
+          statuses = await getAllStatus()
+        } catch (statusesError) {
+          logWebhookError(statusesError, "obteniendo statuses")
+        }
         // Process with AI usando el status efectivo, contexto histórico y reglas simplificadas
-        const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules)
+        const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules, settings, statuses)
 
         const processedMessage: ProcessedMessage = {
           talkId: message.talk_id,
