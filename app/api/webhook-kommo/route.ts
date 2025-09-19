@@ -15,9 +15,12 @@ import {
   logConfigWarning,
   logMessageSkipped,
   logWebhookError,
-  logLeadStatusChange
+  logLeadStatusChange,
+  logDuplicateMessageSkipped,
+  logWebhookValidationPassed,
+  logSpamDetected
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI, getSettingsById, SettingsDocument, getAllStatus, StatusDocument, detectAndLaunchWelcomeBot } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI, getSettingsById, SettingsDocument, getAllStatus, StatusDocument, detectAndLaunchWelcomeBot, validateWebhookForProcessing } from "@/lib/mongodb-services"
 import { getLeadInfo, getContactInfo } from "@/lib/kommo-api"
 import type { KommoApiConfig } from "@/lib/kommo-api"
 
@@ -1051,6 +1054,52 @@ export async function POST(request: NextRequest) {
         } catch (statusesError) {
           logWebhookError(statusesError, "obteniendo statuses")
         }
+
+        // VALIDAR QUE EL MENSAJE NO SEA DUPLICADO ANTES DE PROCESAR CON IA
+        const validationResult = await validateWebhookForProcessing(
+          message.talk_id,
+          message.entity_id,
+          message.contact_id,
+          message.text,
+          message.type,
+          message.element_type
+        )
+
+        if (!validationResult.shouldProcess) {
+          // Loggear mensaje duplicado y saltar procesamiento
+          logDuplicateMessageSkipped(
+            message.talk_id,
+            message.entity_id,
+            message.contact_id,
+            message.text,
+            validationResult.reason || "Sin razón especificada",
+            validationResult.duplicateInfo?.type || 'message',
+            validationResult.duplicateInfo?.lastProcessedAt
+          )
+
+          // Loggear spam si fue detectado
+          if (validationResult.duplicateInfo?.type === 'event') {
+            logSpamDetected(message.contact_id, 2, 5) // Asumiendo 2 mensajes en 5 minutos
+          }
+
+          // Continuar con el flujo pero sin procesar IA
+          logMessageSkipped(`Mensaje duplicado saltado: ${validationResult.reason}`)
+          return NextResponse.json({
+            success: true,
+            message: "Mensaje duplicado detectado y saltado",
+            duplicate: true,
+            reason: validationResult.reason
+          })
+        }
+
+        // Loggear que la validación pasó
+        logWebhookValidationPassed(
+          message.talk_id,
+          message.entity_id,
+          message.contact_id,
+          message.text
+        )
+
         // Process with AI usando el status efectivo, contexto histórico y reglas simplificadas
         const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules, settings, statuses)
 

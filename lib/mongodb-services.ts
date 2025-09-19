@@ -1577,6 +1577,158 @@ export class KommoDatabaseService {
     return existingBotAction !== null;
   }
 
+  // Servicio para validar si un webhook/evento debe ser procesado o es duplicado
+  async validateWebhookForProcessing(
+    talkId: string,
+    entityId: string,
+    contactId: string,
+    messageText: string,
+    messageType?: string,
+    elementType?: string
+  ): Promise<{
+    shouldProcess: boolean;
+    reason?: string;
+    duplicateInfo?: {
+      type: 'message' | 'event' | 'status_change';
+      lastProcessedAt?: string;
+      existingActionId?: string;
+    }
+  }> {
+    try {
+      // 1. Validar si el mensaje ya fue procesado por IA
+      const messageAlreadyProcessed = await this.isMessageAlreadyProcessed(
+        talkId,
+        entityId,
+        contactId,
+        messageText
+      );
+
+      if (messageAlreadyProcessed) {
+        // Obtener información del procesamiento anterior
+        const thirtyMinutesAgo = new Date();
+        thirtyMinutesAgo.setMinutes(thirtyMinutesAgo.getMinutes() - 30);
+
+        const botActionsCollection = await this.getCollection("bot_actions");
+        const existingAction = await botActionsCollection.findOne({
+          talkId: talkId,
+          entityId: entityId,
+          contactId: contactId,
+          messageText: messageText,
+          createdAt: { $gte: thirtyMinutesAgo.toISOString() },
+        });
+
+        return {
+          shouldProcess: false,
+          reason: "Mensaje ya procesado por IA en los últimos 30 minutos",
+          duplicateInfo: {
+            type: 'message',
+            lastProcessedAt: existingAction?.createdAt,
+            existingActionId: existingAction?._id?.toString()
+          }
+        };
+      }
+
+      // 2. Validar eventos duplicados (solo para mensajes entrantes)
+      if (messageType === 'incoming' || elementType === 'message') {
+        // Verificar si hay eventos de cambio de status recientes para el mismo lead
+        const recentStatusChanges = await this.getRecentStatusChanges(entityId, 10); // últimos 10 minutos
+
+        if (recentStatusChanges.length > 0) {
+          // Verificar si el mensaje podría ser un trigger duplicado para cambio de status
+          const normalizedMessage = messageText.trim().toLowerCase();
+
+          // Palabras clave que podrían indicar un cambio de status reciente
+          const statusChangeKeywords = [
+            'cambio', 'status', 'estado', 'actualización', 'modificación',
+            'change', 'update', 'status', 'modified'
+          ];
+
+          const mightBeStatusChange = statusChangeKeywords.some(keyword =>
+            normalizedMessage.includes(keyword)
+          );
+
+          if (mightBeStatusChange && recentStatusChanges.length >= 2) {
+            return {
+              shouldProcess: false,
+              reason: "Posible evento duplicado de cambio de status detectado",
+              duplicateInfo: {
+                type: 'status_change',
+                lastProcessedAt: recentStatusChanges[0].createdAt
+              }
+            };
+          }
+        }
+      }
+
+      // 3. Validar frecuencia de mensajes del mismo contacto (anti-spam)
+      const recentMessages = await this.getRecentMessagesFromContact(contactId, 5); // últimos 5 minutos
+
+      if (recentMessages.length >= 5) {
+        // Si hay 5+ mensajes en 5 minutos, podría ser spam o duplicado
+        const similarMessages = recentMessages.filter(msg =>
+          msg.text.trim().toLowerCase() === messageText.trim().toLowerCase()
+        );
+
+        if (similarMessages.length >= 2) {
+          return {
+            shouldProcess: false,
+            reason: "Múltiples mensajes idénticos detectados (posible spam)",
+            duplicateInfo: {
+              type: 'event',
+              lastProcessedAt: similarMessages[0].createdAt
+            }
+          };
+        }
+      }
+
+      return { shouldProcess: true };
+
+    } catch (error) {
+      // En caso de error en la validación, permitir el procesamiento para evitar bloquear mensajes legítimos
+      console.warn("Error en validación de webhook duplicado:", error);
+      return { shouldProcess: true };
+    }
+  }
+
+  // Helper: Obtener cambios de status recientes para un lead
+  private async getRecentStatusChanges(entityId: string, minutesAgo: number = 10) {
+    const collection = await this.getCollection("bot_actions");
+
+    const timeAgo = new Date();
+    timeAgo.setMinutes(timeAgo.getMinutes() - minutesAgo);
+
+    const statusChanges = await collection.find({
+      entityId: entityId,
+      "aiDecision.shouldChange": true,
+      createdAt: { $gte: timeAgo.toISOString() }
+    }).sort({ createdAt: -1 }).limit(5).toArray();
+
+    return statusChanges.map(change => ({
+      createdAt: change.createdAt,
+      oldStatus: change.aiDecision.currentStatus,
+      newStatus: change.aiDecision.newStatus
+    }));
+  }
+
+  // Helper: Obtener mensajes recientes de un contacto
+  private async getRecentMessagesFromContact(contactId: string, minutesAgo: number = 5) {
+    const collection = await this.getCollection("messages");
+
+    const timeAgo = new Date();
+    timeAgo.setMinutes(timeAgo.getMinutes() - minutesAgo);
+
+    const messages = await collection.find({
+      contactId: contactId,
+      createdAt: { $gte: timeAgo.toISOString() }
+    }).sort({ createdAt: -1 }).toArray();
+
+    return messages.map(msg => ({
+      text: msg.text,
+      createdAt: msg.createdAt,
+      id: msg.id
+    }));
+  }
+
   // Servicio para verificar si ya se envió una conversión a Meta para este código y tipo de evento en los últimos 30 minutos
   async isConversionAlreadySent(
     extractedCode: string,
@@ -1896,6 +2048,23 @@ export const isMessageAlreadyProcessed = (
     entityId,
     contactId,
     messageText
+  );
+
+export const validateWebhookForProcessing = (
+  talkId: string,
+  entityId: string,
+  contactId: string,
+  messageText: string,
+  messageType?: string,
+  elementType?: string
+) =>
+  kommoDatabaseService.validateWebhookForProcessing(
+    talkId,
+    entityId,
+    contactId,
+    messageText,
+    messageType,
+    elementType
   );
 
 export const isConversionAlreadySent = (

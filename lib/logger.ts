@@ -367,6 +367,56 @@ class Logger {
       timestamp: new Date().toISOString()
     }, { entityId })
   }
+
+  // Logs específicos para validación de duplicados
+  logDuplicateMessageSkipped(
+    talkId: string,
+    entityId: string,
+    contactId: string,
+    messageText: string,
+    reason: string,
+    duplicateType: 'message' | 'event' | 'status_change',
+    lastProcessedAt?: string
+  ) {
+    this.warn(`🚫 MENSAJE DUPLICADO SALTADO - Talk: ${talkId}`, {
+      talkId,
+      entityId,
+      contactId,
+      message: messageText.substring(0, 100) + (messageText.length > 100 ? '...' : ''),
+      reason,
+      duplicateType,
+      lastProcessedAt,
+      timestamp: new Date().toISOString()
+    }, { talkId, entityId, contactId })
+  }
+
+  logWebhookValidationPassed(
+    talkId: string,
+    entityId: string,
+    contactId: string,
+    messageText: string
+  ) {
+    this.info(`✅ Validación de webhook PASADA - Talk: ${talkId}`, {
+      talkId,
+      entityId,
+      contactId,
+      message: messageText.substring(0, 50) + (messageText.length > 50 ? '...' : ''),
+      timestamp: new Date().toISOString()
+    }, { talkId, entityId, contactId })
+  }
+
+  logSpamDetected(
+    contactId: string,
+    messageCount: number,
+    timeWindow: number
+  ) {
+    this.warn(`🚨 SPAM DETECTADO - Contact: ${contactId}`, {
+      contactId,
+      messageCount,
+      timeWindowMinutes: timeWindow,
+      timestamp: new Date().toISOString()
+    }, { contactId })
+  }
 }
 
 // Instancia singleton del logger
@@ -410,3 +460,27 @@ export const logWelcomeBotSkipped = (messageText: string, reason: string, entity
 export const logWelcomeBotDetection = (messageText: string, entityId: string) => logger.logWelcomeBotDetection(messageText, entityId)
 export const logWelcomeBotLaunched = (entityId: string, botId: number) => logger.logWelcomeBotLaunched(entityId, botId)
 export const logWelcomeBotError = (entityId: string, error: string) => logger.logWelcomeBotError(entityId, error)
+
+// Funciones de logging para validación de duplicados
+export const logDuplicateMessageSkipped = (
+  talkId: string,
+  entityId: string,
+  contactId: string,
+  messageText: string,
+  reason: string,
+  duplicateType: 'message' | 'event' | 'status_change',
+  lastProcessedAt?: string
+) => logger.logDuplicateMessageSkipped(talkId, entityId, contactId, messageText, reason, duplicateType, lastProcessedAt)
+
+export const logWebhookValidationPassed = (
+  talkId: string,
+  entityId: string,
+  contactId: string,
+  messageText: string
+) => logger.logWebhookValidationPassed(talkId, entityId, contactId, messageText)
+
+export const logSpamDetected = (
+  contactId: string,
+  messageCount: number,
+  timeWindow: number
+) => logger.logSpamDetected(contactId, messageCount, timeWindow)
