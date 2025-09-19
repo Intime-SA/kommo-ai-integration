@@ -879,14 +879,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Validar que el mensaje tenga texto antes de procesar
-      if (!message.text || message.text.trim() === "") {
+/*       if (!message.text || message.text.trim() === "") {
         logMessageSkipped("Mensaje sin texto - ignorando procesamiento")
         return NextResponse.json({
           success: true,
           processed: false,
           message: "Mensaje sin texto - no procesado",
         })
-      }
+      } */
 
       // Validar si el mensaje contiene un código
       const extractedCode = extractCodeFromMessage(message.text)
