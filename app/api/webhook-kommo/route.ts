@@ -1217,7 +1217,7 @@ export async function POST(request: NextRequest) {
           }
 
           // Verificar si es un mensaje de bienvenida y lanzar bot si corresponde
-          try {
+    /*       try {
             const welcomeBotResult = await detectAndLaunchWelcomeBot(
               message.text,
               message.entity_id,
@@ -1232,7 +1232,7 @@ export async function POST(request: NextRequest) {
           } catch (welcomeBotError) {
             console.error(`❌ Error al procesar bot de bienvenida:`, welcomeBotError)
             // No lanzamos error aquí para no cortar el flujo principal
-          }
+          } */
 
           return NextResponse.json({
             success: true,
