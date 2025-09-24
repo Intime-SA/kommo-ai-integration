@@ -20,7 +20,7 @@ import {
   logWebhookValidationPassed,
   logSpamDetected
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI, getSettingsById, SettingsDocument, getAllStatus, StatusDocument, detectAndLaunchWelcomeBot, validateWebhookForProcessing } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI, getSettingsById, SettingsDocument, getAllStatus, StatusDocument, detectAndLaunchWelcomeBot, validateWebhookForProcessing, checkExistingProcessingTimestamp, checkExistingMessageText } from "@/lib/mongodb-services"
 import { getLeadInfo, getContactInfo } from "@/lib/kommo-api"
 import type { KommoApiConfig } from "@/lib/kommo-api"
 
@@ -860,7 +860,7 @@ export async function POST(request: NextRequest) {
     if (webhookData.message?.add?.[0]?.type === "incoming") {
       const message = webhookData.message.add[0]
 
-      // Save message to database first
+      // Save message to database first and process with AI only if save succeeds
       try {
         await receiveMessage({
           id: message.id,
@@ -876,369 +876,381 @@ export async function POST(request: NextRequest) {
           type: message.type as "incoming" | "outgoing",
           author: message.author
         })
-      } catch (error) {
-        logWebhookError(error, "guardando mensaje en base de datos")
-        // Continue processing even if database save fails
-      }
 
-      // Validar que el mensaje tenga texto antes de procesar
-/*       if (!message.text || message.text.trim() === "") {
-        logMessageSkipped("Mensaje sin texto - ignorando procesamiento")
-        return NextResponse.json({
-          success: true,
-          processed: false,
-          message: "Mensaje sin texto - no procesado",
-        })
-      } */
+        // Solo procesar con IA si el mensaje se guardó correctamente en la DB
 
-      // Validar si el mensaje contiene un código
-      const extractedCode = extractCodeFromMessage(message.text)
-      if (extractedCode) {
+        // Validar si el mensaje contiene un código
+        const extractedCode = extractCodeFromMessage(message.text)
+        if (extractedCode) {
 
-        try {
-          // Buscar el token en la base de datos
-          const tokenVisit = await findTokenVisit(extractedCode)
+          try {
+            // Buscar el token en la base de datos
+            const tokenVisit = await findTokenVisit(extractedCode)
 
-          if (tokenVisit) {
-            console.log(`✅ Token encontrado:`, tokenVisit)
+            if (tokenVisit) {
+              console.log(`✅ Token encontrado:`, tokenVisit)
 
-            // Verificar si ya se envió una conversión para este código y tipo de evento en los últimos 30 minutos
-            const conversionAlreadySent = await isConversionAlreadySent(extractedCode, "ConversacionCRM1")
-            if (conversionAlreadySent) {
-              console.log(`⚠️ Conversión ya enviada para código ${extractedCode} en los últimos 30 minutos - omitiendo envío duplicado`)
-              // Continuar con el procesamiento del mensaje (no retornar aquí)
-            } else {
-              // Enviar conversión a Meta API
-            const metaAccessToken = process.env.META_ACCESS_TOKEN
-            if (!metaAccessToken) {
-              console.error("❌ META_ACCESS_TOKEN no configurado")
-              return NextResponse.json({
-                success: false,
-                processed: false,
-                message: "META_ACCESS_TOKEN no configurado",
-              })
-            }
-            const conversionResult = await sendConversionToMeta({
-              ...tokenVisit.lead,
-              extractedCode: extractedCode,
-              eventName: "ConversacionCRM1"
-            }, metaAccessToken)
+              // Verificar si ya se envió una conversión para este código y tipo de evento en los últimos 30 minutos
+              const conversionAlreadySent = await isConversionAlreadySent(extractedCode, "ConversacionCRM1")
+              if (conversionAlreadySent) {
+                console.log(`⚠️ Conversión ya enviada para código ${extractedCode} en los últimos 30 minutos - omitiendo envío duplicado`)
+                // Continuar con el procesamiento del mensaje (no retornar aquí)
+              } else {
+                // Enviar conversión a Meta API
+              const metaAccessToken = process.env.META_ACCESS_TOKEN
+              if (!metaAccessToken) {
+                console.error("❌ META_ACCESS_TOKEN no configurado")
+                return NextResponse.json({
+                  success: false,
+                  processed: false,
+                  message: "META_ACCESS_TOKEN no configurado",
+                })
+              }
+              const conversionResult = await sendConversionToMeta({
+                ...tokenVisit.lead,
+                extractedCode: extractedCode,
+                eventName: "ConversacionCRM1"
+              }, metaAccessToken)
 
-            // Preparar datos para guardar en send_meta
-            const conversionData = {
-              data: [
-                {
-                  event_name: "ConversacionCRM1",
-                  event_time: Math.floor(Date.now() / 1000),
-                  action_source: "website",
-                  event_source_url: tokenVisit.lead.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
-                  user_data: {
-                    client_ip_address: tokenVisit.lead.ip ? tokenVisit.lead.ip : undefined,
-                    client_user_agent: tokenVisit.lead.userAgent ? tokenVisit.lead.userAgent : undefined,
-                    fbp: tokenVisit.lead.fbp ? tokenVisit.lead.fbp : undefined,
-                    fbc: tokenVisit.lead.fbc ? tokenVisit.lead.fbc : undefined,
+              // Preparar datos para guardar en send_meta
+              const conversionData = {
+                data: [
+                  {
+                    event_name: "ConversacionCRM1",
+                    event_time: Math.floor(Date.now() / 1000),
+                    action_source: "website",
+                    event_source_url: tokenVisit.lead.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
+                    user_data: {
+                      client_ip_address: tokenVisit.lead.ip ? tokenVisit.lead.ip : undefined,
+                      client_user_agent: tokenVisit.lead.userAgent ? tokenVisit.lead.userAgent : undefined,
+                      fbp: tokenVisit.lead.fbp ? tokenVisit.lead.fbp : undefined,
+                      fbc: tokenVisit.lead.fbc ? tokenVisit.lead.fbc : undefined,
+                    }
                   }
-                }
-              ]
-            };
+                ]
+              };
 
-            // Guardar registro en colección send_meta
-            // Array con [0] = ConversacionCRM1
-            const saveResult = await saveSendMetaRecord(
-              [conversionData],
-              message,
-              extractedCode,
-              [conversionResult]
-            );
+              // Guardar registro en colección send_meta
+              // Array con [0] = ConversacionCRM1
+              const saveResult = await saveSendMetaRecord(
+                [conversionData],
+                message,
+                extractedCode,
+                [conversionResult]
+              );
 
-            if (saveResult.success) {
-              console.log(`💾 Registro guardado en send_meta para código: ${extractedCode}`)
+              if (saveResult.success) {
+                console.log(`💾 Registro guardado en send_meta para código: ${extractedCode}`)
+              } else {
+                console.error(`❌ Error al guardar en send_meta para código ${extractedCode}:`, saveResult.error)
+              }
+
+              if (conversionResult.success) {
+                console.log(`🎉 Conversión enviada exitosamente para código: ${extractedCode}`)
+
+                // Sincronizar lead y contacto desde API de Kommo si no existen localmente
+                await syncLeadAndContactFromKommoApi(message.entity_id, message.contact_id)
+              } else {
+                console.error(`❌ Error al enviar conversión para código ${extractedCode}:`, conversionResult.error)
+              }
+              }
             } else {
-              console.error(`❌ Error al guardar en send_meta para código ${extractedCode}:`, saveResult.error)
+              console.log(`⚠️ Código no encontrado en base de datos: ${extractedCode}`)
             }
-
-            if (conversionResult.success) {
-              console.log(`🎉 Conversión enviada exitosamente para código: ${extractedCode}`)
-
-              // Sincronizar lead y contacto desde API de Kommo si no existen localmente
-              await syncLeadAndContactFromKommoApi(message.entity_id, message.contact_id)
-            } else {
-              console.error(`❌ Error al enviar conversión para código ${extractedCode}:`, conversionResult.error)
-            }
-            }
-          } else {
-            console.log(`⚠️ Código no encontrado en base de datos: ${extractedCode}`)
+          } catch (error) {
+            console.error(`❌ Error al procesar código ${extractedCode}:`, error)
           }
-        } catch (error) {
-          console.error(`❌ Error al procesar código ${extractedCode}:`, error)
-        }
-      }
-
-      if (message.talk_id && message.entity_id) {
-        // Verificar si el mensaje ya fue procesado por la IA para evitar reprocesamiento
-        const alreadyProcessed = await isMessageAlreadyProcessed(
-          message.talk_id,
-          message.entity_id,
-          message.contact_id,
-          message.text
-        )
-
-        if (alreadyProcessed) {
-          logMessageSkipped(`Mensaje ya procesado anteriormente - ignorando reprocesamiento: ${message.id}`)
-          return NextResponse.json({
-            success: true,
-            processed: false,
-            message: "Mensaje ya procesado anteriormente - no reprocesado",
-            duplicate: true
-          })
         }
 
-        logMessageProcessing(message.text, message.author?.name || "Cliente", message.talk_id, message.entity_id)
+        if (message.talk_id && message.entity_id) {
+          // Verificar si el mensaje ya fue procesado por la IA para evitar reprocesamiento
+          const alreadyProcessed = await isMessageAlreadyProcessed(
+            message.talk_id,
+            message.entity_id,
+            message.contact_id,
+            message.text
+          )
 
-        // Obtener la configuración de Kommo
-        const config: KommoApiConfig = {
-          subdomain: process.env.KOMMO_SUBDOMAIN || "",
-        }
+          if (alreadyProcessed) {
+            logMessageSkipped(`Mensaje ya procesado anteriormente - ignorando reprocesamiento: ${message.id}`)
+            return NextResponse.json({
+              success: true,
+              processed: false,
+              message: "Mensaje ya procesado anteriormente - no reprocesado",
+              duplicate: true
+            })
+          }
 
-        if (!config.subdomain) {
-          logConfigWarning("Configuración de Kommo incompleta - no se puede procesar el lead")
-          return NextResponse.json({
-            success: false,
-            processed: false,
-            message: "Configuración de Kommo incompleta",
-          })
-        }
+          logMessageProcessing(message.text, message.author?.name || "Cliente", message.talk_id, message.entity_id)
 
-        // Obtener el status actual del lead desde Kommo
-        logLeadStatusQuery(message.entity_id)
-        const currentStatus = await getCurrentLeadStatus(message.entity_id, config)
+          // Obtener la configuración de Kommo
+          const config: KommoApiConfig = {
+            subdomain: process.env.KOMMO_SUBDOMAIN || "",
+          }
 
-        // Usar 'sin-status' si no se puede obtener el status actual
-        const effectiveStatus = currentStatus || 'sin-status'
+          if (!config.subdomain) {
+            logConfigWarning("Configuración de Kommo incompleta - no se puede procesar el lead")
+            return NextResponse.json({
+              success: false,
+              processed: false,
+              message: "Configuración de Kommo incompleta",
+            })
+          }
 
-        if (!currentStatus) {
-          logConfigWarning(`No se pudo obtener el status actual del lead ${message.entity_id}, usando 'sin-status'`)
-        } else {
-          logLeadStatusRetrieved(message.entity_id, currentStatus, "")
-        }
+          // Obtener el status actual del lead desde Kommo
+          logLeadStatusQuery(message.entity_id)
+          const currentStatus = await getCurrentLeadStatus(message.entity_id, config)
 
-        // Obtener contexto histórico del contacto (últimas 24 horas)
-        let contactContext
-        try {
-          contactContext = await getContactContext(message.contact_id)
-        } catch (contextError) {
-          logWebhookError(contextError, "obteniendo contexto histórico del contacto")
-          // Continuar sin contexto si hay error
-        }
+          // Usar 'sin-status' si no se puede obtener el status actual
+          const effectiveStatus = currentStatus || 'sin-status'
 
-        let simplifiedRules: Array<{ priority: number; rule: string }> = []
-        try {
-          simplifiedRules = await getActiveRulesForAI()
-          console.log("📋 Reglas normalizadas para AI:", simplifiedRules)
+          if (!currentStatus) {
+            logConfigWarning(`No se pudo obtener el status actual del lead ${message.entity_id}, usando 'sin-status'`)
+          } else {
+            logLeadStatusRetrieved(message.entity_id, currentStatus, "")
+          }
 
-        } catch (rulesError) {
-          logWebhookError(rulesError, "obteniendo reglas generales")
-          // Continuar sin reglas si hay error (array vacío)
-        }
+          // Obtener contexto histórico del contacto (últimas 24 horas)
+          let contactContext
+          try {
+            contactContext = await getContactContext(message.contact_id)
+          } catch (contextError) {
+            logWebhookError(contextError, "obteniendo contexto histórico del contacto")
+            // Continuar sin contexto si hay error
+          }
 
-        let settings: SettingsDocument | null = null
-        try {
-          settings = await getSettingsById("68cc2e745128f9ce1830bfec")
-        } catch (settingsError) {
-          logWebhookError(settingsError, "obteniendo settings")
-        }
+          let simplifiedRules: Array<{ priority: number; rule: string }> = []
+          try {
+            simplifiedRules = await getActiveRulesForAI()
+            console.log("📋 Reglas normalizadas para AI:", simplifiedRules)
 
-        let statuses: StatusDocument[] | null = null
-        try {
-          statuses = await getAllStatus()
-        } catch (statusesError) {
-          logWebhookError(statusesError, "obteniendo statuses")
-        }
+          } catch (rulesError) {
+            logWebhookError(rulesError, "obteniendo reglas generales")
+            // Continuar sin reglas si hay error (array vacío)
+          }
 
-        // VALIDAR QUE EL MENSAJE NO SEA DUPLICADO ANTES DE PROCESAR CON IA
-        const validationResult = await validateWebhookForProcessing(
-          message.talk_id,
-          message.entity_id,
-          message.contact_id,
-          message.text,
-          message.type,
-          message.element_type
-        )
+          let settings: SettingsDocument | null = null
+          try {
+            settings = await getSettingsById("68cc2e745128f9ce1830bfec")
+          } catch (settingsError) {
+            logWebhookError(settingsError, "obteniendo settings")
+          }
 
-        if (!validationResult.shouldProcess) {
-          // Loggear mensaje duplicado y saltar procesamiento
-          logDuplicateMessageSkipped(
+          let statuses: StatusDocument[] | null = null
+          try {
+            statuses = await getAllStatus()
+          } catch (statusesError) {
+            logWebhookError(statusesError, "obteniendo statuses")
+          }
+
+          // VALIDAR QUE EL MENSAJE NO SEA DUPLICADO ANTES DE PROCESAR CON IA
+          const validationResult = await validateWebhookForProcessing(
             message.talk_id,
             message.entity_id,
             message.contact_id,
             message.text,
-            validationResult.reason || "Sin razón especificada",
-            validationResult.duplicateInfo?.type || 'message',
-            validationResult.duplicateInfo?.lastProcessedAt
+            message.type,
+            message.element_type
           )
 
-          // Loggear spam si fue detectado
-          if (validationResult.duplicateInfo?.type === 'event') {
-            logSpamDetected(message.contact_id, 2, 5) // Asumiendo 2 mensajes en 5 minutos
-          }
-
-          // Continuar con el flujo pero sin procesar IA
-          logMessageSkipped(`Mensaje duplicado saltado: ${validationResult.reason}`)
-          return NextResponse.json({
-            success: true,
-            message: "Mensaje duplicado detectado y saltado",
-            duplicate: true,
-            reason: validationResult.reason
-          })
-        }
-
-        // Loggear que la validación pasó
-        logWebhookValidationPassed(
-          message.talk_id,
-          message.entity_id,
-          message.contact_id,
-          message.text
-        )
-
-        // Process with AI usando el status efectivo, contexto histórico y reglas simplificadas
-        const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules, settings, statuses)
-
-        const processedMessage: ProcessedMessage = {
-          talkId: message.talk_id,
-          contactId: message.contact_id,
-          entityId: message.entity_id,
-          messageText: message.text,
-          authorName: message.author?.name || "Cliente",
-          timestamp: new Date(Number.parseInt(message.created_at) * 1000).toISOString(),
-          aiDecision,
-        }
-        console.log("Processed message:", processedMessage)
-
-        logAiDecision(aiDecision, message.talk_id, message.entity_id)
-
-        // Here you would typically:
-        // 1. Save the processed message to your database
-        // 2. If aiDecision.shouldChange is true, update the lead status in Kommo
-        // 3. Log the activity for monitoring
-
-        if (aiDecision.shouldChange) {
-          logStatusChange(aiDecision.currentStatus, aiDecision.newStatus, aiDecision.reasoning, message.talk_id, message.entity_id)
-
-          try {
-            const updateSuccess = await updateLeadStatusByName(
+          if (!validationResult.shouldProcess) {
+            // Loggear mensaje duplicado y saltar procesamiento
+            logDuplicateMessageSkipped(
+              message.talk_id,
               message.entity_id,
-              aiDecision.newStatus as keyof typeof import("@/lib/kommo-api").STATUS_MAPPING,
-              config
+              message.contact_id,
+              message.text,
+              validationResult.reason || "Sin razón especificada",
+              validationResult.duplicateInfo?.type || 'message',
+              validationResult.duplicateInfo?.lastProcessedAt
             )
 
-            if (updateSuccess) {
-              logLeadUpdateSuccess(message.entity_id, aiDecision.newStatus)
-            } else {
-              logLeadUpdateError(message.entity_id, aiDecision.newStatus)
+            // Loggear spam si fue detectado
+            if (validationResult.duplicateInfo?.type === 'event') {
+              logSpamDetected(message.contact_id, 2, 5) // Asumiendo 2 mensajes en 5 minutos
             }
 
-            // Registrar la acción del bot en la base de datos
-            try {
-              await createBotAction({
-                talkId: message.talk_id,
-                entityId: message.entity_id,
-                contactId: message.contact_id,
-                messageText: message.text,
-                messageCreatedAt: message.created_at,
-                aiDecision: {
-                  currentStatus: aiDecision.currentStatus,
-                  newStatus: aiDecision.newStatus,
-                  shouldChange: aiDecision.shouldChange,
-                  reasoning: aiDecision.reasoning,
-                  confidence: aiDecision.confidence,
-                },
-                statusUpdateResult: {
-                  success: updateSuccess,
-                },
-              })
-            } catch (botActionError) {
-              logWebhookError(botActionError, "registrando acción del bot en base de datos")
-              // No lanzamos error aquí para no cortar el flujo principal
-            }
-          } catch (updateError) {
-            logLeadUpdateError(message.entity_id, aiDecision.newStatus, updateError)
-
-            // Registrar la acción del bot con error en la actualización
-            try {
-              await createBotAction({
-                talkId: message.talk_id,
-                entityId: message.entity_id,
-                contactId: message.contact_id,
-                messageText: message.text,
-                messageCreatedAt: message.created_at,
-                aiDecision: {
-                  currentStatus: aiDecision.currentStatus,
-                  newStatus: aiDecision.newStatus,
-                  shouldChange: aiDecision.shouldChange,
-                  reasoning: aiDecision.reasoning,
-                  confidence: aiDecision.confidence,
-                },
-                statusUpdateResult: {
-                  success: false,
-                  error: updateError instanceof Error ? updateError.message : "Error desconocido",
-                },
-              })
-            } catch (botActionError) {
-              logWebhookError(botActionError, "registrando acción del bot con error en base de datos")
-              // No lanzamos error aquí para no cortar el flujo principal
-            }
-          }
-        } else {
-          // Registrar la acción del bot cuando no se cambia el status
-          try {
-            await createBotAction({
-              talkId: message.talk_id,
-              entityId: message.entity_id,
-              contactId: message.contact_id,
-              messageText: message.text,
-              messageCreatedAt: message.created_at,
-              aiDecision: {
-                currentStatus: aiDecision.currentStatus,
-                newStatus: aiDecision.newStatus,
-                shouldChange: aiDecision.shouldChange,
-                reasoning: aiDecision.reasoning,
-                confidence: aiDecision.confidence,
-              },
-              statusUpdateResult: {
-                success: true, // No se intentó actualizar, así que es exitoso por defecto
-              },
+            // Continuar con el flujo pero sin procesar IA
+            logMessageSkipped(`Mensaje duplicado saltado: ${validationResult.reason}`)
+            return NextResponse.json({
+              success: true,
+              message: "Mensaje duplicado detectado y saltado",
+              duplicate: true,
+              reason: validationResult.reason
             })
-          } catch (botActionError) {
-            logWebhookError(botActionError, "registrando acción del bot sin cambio en base de datos")
-            // No lanzamos error aquí para no cortar el flujo principal
           }
-        }
 
-        // Verificar si es un mensaje de bienvenida y lanzar bot si corresponde
-        try {
-          const welcomeBotResult = await detectAndLaunchWelcomeBot(
-            message.text,
+          // Loggear que la validación pasó
+          logWebhookValidationPassed(
+            message.talk_id,
             message.entity_id,
-            settings
+            message.contact_id,
+            message.text
           )
 
-          if (welcomeBotResult.launched) {
-            console.log(`🤖 Bot de bienvenida lanzado exitosamente para mensaje: "${message.text}"`)
-          } else if (welcomeBotResult.error) {
-            console.log(`ℹ️ Bot de bienvenida no lanzado: ${welcomeBotResult.error}`)
-          }
-        } catch (welcomeBotError) {
-          console.error(`❌ Error al procesar bot de bienvenida:`, welcomeBotError)
-          // No lanzamos error aquí para no cortar el flujo principal
-        }
+          // Verificar si ya existe el message.text procesado por el bot en la colección
+          const alreadyProcessedByMessageText = await checkExistingMessageText(message.text);
 
+
+          if (alreadyProcessedByMessageText) {
+            console.log(`⚠️ Mensaje ya procesado anteriormente (message.text: "${message.text}") - saltando procesamiento con IA`);
+            return NextResponse.json({
+              success: true,
+              message: "Mensaje ya procesado anteriormente",
+              messageText: message.text,
+              skipped: true
+            });
+          }
+
+          // Process with AI usando el status efectivo, contexto histórico y reglas simplificadas
+          const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules, settings, statuses)
+
+          const processedMessage: ProcessedMessage = {
+            talkId: message.talk_id,
+            contactId: message.contact_id,
+            entityId: message.entity_id,
+            messageText: message.text,
+            authorName: message.author?.name || "Cliente",
+            timestamp: new Date(Number.parseInt(message.created_at) * 1000).toISOString(),
+            aiDecision,
+          }
+          console.log("Processed message:", processedMessage)
+
+          logAiDecision(aiDecision, message.talk_id, message.entity_id)
+
+          // Here you would typically:
+          // 1. Save the processed message to your database
+          // 2. If aiDecision.shouldChange is true, update the lead status in Kommo
+          // 3. Log the activity for monitoring
+
+          if (aiDecision.shouldChange) {
+            logStatusChange(aiDecision.currentStatus, aiDecision.newStatus, aiDecision.reasoning, message.talk_id, message.entity_id)
+
+            try {
+              const updateSuccess = await updateLeadStatusByName(
+                message.entity_id,
+                aiDecision.newStatus as keyof typeof import("@/lib/kommo-api").STATUS_MAPPING,
+                config
+              )
+
+              if (updateSuccess) {
+                logLeadUpdateSuccess(message.entity_id, aiDecision.newStatus)
+              } else {
+                logLeadUpdateError(message.entity_id, aiDecision.newStatus)
+              }
+
+              // Registrar la acción del bot en la base de datos
+              try {
+                await createBotAction({
+                  talkId: message.talk_id,
+                  entityId: message.entity_id,
+                  contactId: message.contact_id,
+                  messageText: message.text,
+                  messageCreatedAt: message.created_at,
+                  aiDecision: {
+                    currentStatus: aiDecision.currentStatus,
+                    newStatus: aiDecision.newStatus,
+                    shouldChange: aiDecision.shouldChange,
+                    reasoning: aiDecision.reasoning,
+                    confidence: aiDecision.confidence,
+                  },
+                  statusUpdateResult: {
+                    success: updateSuccess,
+                  },
+                })
+              } catch (botActionError) {
+                logWebhookError(botActionError, "registrando acción del bot en base de datos")
+                // No lanzamos error aquí para no cortar el flujo principal
+              }
+            } catch (updateError) {
+              logLeadUpdateError(message.entity_id, aiDecision.newStatus, updateError)
+
+              // Registrar la acción del bot con error en la actualización
+              try {
+                await createBotAction({
+                  talkId: message.talk_id,
+                  entityId: message.entity_id,
+                  contactId: message.contact_id,
+                  messageText: message.text,
+                  messageCreatedAt: message.created_at,
+                  aiDecision: {
+                    currentStatus: aiDecision.currentStatus,
+                    newStatus: aiDecision.newStatus,
+                    shouldChange: aiDecision.shouldChange,
+                    reasoning: aiDecision.reasoning,
+                    confidence: aiDecision.confidence,
+                  },
+                  statusUpdateResult: {
+                    success: false,
+                    error: updateError instanceof Error ? updateError.message : "Error desconocido",
+                  },
+                })
+              } catch (botActionError) {
+                logWebhookError(botActionError, "registrando acción del bot con error en base de datos")
+                // No lanzamos error aquí para no cortar el flujo principal
+              }
+            }
+          } else {
+            // Registrar la acción del bot cuando no se cambia el status
+            try {
+              await createBotAction({
+                talkId: message.talk_id,
+                entityId: message.entity_id,
+                contactId: message.contact_id,
+                messageText: message.text,
+                messageCreatedAt: message.created_at,
+                aiDecision: {
+                  currentStatus: aiDecision.currentStatus,
+                  newStatus: aiDecision.newStatus,
+                  shouldChange: aiDecision.shouldChange,
+                  reasoning: aiDecision.reasoning,
+                  confidence: aiDecision.confidence,
+                },
+                statusUpdateResult: {
+                  success: true, // No se intentó actualizar, así que es exitoso por defecto
+                },
+              })
+            } catch (botActionError) {
+              logWebhookError(botActionError, "registrando acción del bot sin cambio en base de datos")
+              // No lanzamos error aquí para no cortar el flujo principal
+            }
+          }
+
+          // Verificar si es un mensaje de bienvenida y lanzar bot si corresponde
+          try {
+            const welcomeBotResult = await detectAndLaunchWelcomeBot(
+              message.text,
+              message.entity_id,
+              settings
+            )
+
+            if (welcomeBotResult.launched) {
+              console.log(`🤖 Bot de bienvenida lanzado exitosamente para mensaje: "${message.text}"`)
+            } else if (welcomeBotResult.error) {
+              console.log(`ℹ️ Bot de bienvenida no lanzado: ${welcomeBotResult.error}`)
+            }
+          } catch (welcomeBotError) {
+            console.error(`❌ Error al procesar bot de bienvenida:`, welcomeBotError)
+            // No lanzamos error aquí para no cortar el flujo principal
+          }
+
+          return NextResponse.json({
+            success: true,
+            processed: true,
+            decision: aiDecision,
+            currentStatus,
+            message: "Mensaje procesado correctamente",
+          })
+        }
+      } catch (error) {
+        logWebhookError(error, "guardando mensaje en base de datos")
+        // Si falla el guardado en DB, no se procesa con IA
         return NextResponse.json({
-          success: true,
-          processed: true,
-          decision: aiDecision,
-          currentStatus,
-          message: "Mensaje procesado correctamente",
-        })
+          success: false,
+          processed: false,
+          message: "Error al guardar mensaje en base de datos - no se procesó con IA",
+          error: error instanceof Error ? error.message : "Error desconocido",
+        }, { status: 500 })
       }
     }
 

@@ -1605,8 +1605,8 @@ export class KommoDatabaseService {
 
       if (messageAlreadyProcessed) {
         // Obtener información del procesamiento anterior
-        const thirtyMinutesAgo = new Date();
-        thirtyMinutesAgo.setMinutes(thirtyMinutesAgo.getMinutes() - 30);
+/*         const thirtyMinutesAgo = new Date();
+        thirtyMinutesAgo.setMinutes(thirtyMinutesAgo.getMinutes() - 30); */
 
         const botActionsCollection = await this.getCollection("bot_actions");
         const existingAction = await botActionsCollection.findOne({
@@ -1614,7 +1614,6 @@ export class KommoDatabaseService {
           entityId: entityId,
           contactId: contactId,
           messageText: messageText,
-          createdAt: { $gte: thirtyMinutesAgo.toISOString() },
         });
 
         return {
@@ -3020,6 +3019,41 @@ export async function getActiveRulesForAI(
   return normalizeRulesForAI(response.rules);
 }
 
+export async function checkExistingProcessingTimestamp(processingTimestamp: string): Promise<boolean> {
+  try {
+    const db = await clientPromise;
+    const collection = db.db("kommo").collection<BotActionDocument>("bot_actions");
+
+    // Convertir el timestamp a Date
+    const targetTime = new Date(processingTimestamp);
+
+    // Calcular rango: 30 minutos antes y 3 horas después
+    const thirtyMinutesBefore = new Date(targetTime);
+    thirtyMinutesBefore.setMinutes(thirtyMinutesBefore.getMinutes() - 30);
+
+    console.log("thirtyMinutesBefore", thirtyMinutesBefore.toISOString());
+
+    const threeHoursAfter = new Date(targetTime);
+    threeHoursAfter.setHours(threeHoursAfter.getHours() + 3);
+
+    console.log("threeHoursAfter", threeHoursAfter.toISOString());
+    // Consultar si existe algún documento en ese rango de tiempo
+    const existingAction = await collection.findOne({
+      processingTimestamp: {
+        $gte: thirtyMinutesBefore.toISOString(),
+        $lte: threeHoursAfter.toISOString()
+      }
+    });
+    console.log("existingAction", existingAction);
+
+    return existingAction !== null;
+  } catch (error) {
+    console.error("❌ Error verificando processingTimestamp existente:", error);
+    // En caso de error, permitir el procesamiento para evitar bloquear mensajes legítimos
+    return false;
+  }
+}
+
 /**
  * Función para detectar si un mensaje es de bienvenida y lanzar el bot de Kommo
  */
@@ -3113,3 +3147,40 @@ export async function detectAndLaunchWelcomeBot(
     };
   }
 }
+
+/**
+ * Verificar si ya existe un message.text procesado por el bot en la colección
+ * @param messageText El texto del mensaje a verificar
+ * @returns true si el mensaje ya fue procesado, false en caso contrario
+ */
+export async function checkExistingMessageText(messageText: string): Promise<boolean> {
+  try {
+    const db = await clientPromise;
+    const collection = db.db("kommo").collection<BotActionDocument>("bot_actions");
+
+    // Normalizar el mensaje para comparación (trim y lowercase)
+    const normalizedMessage = messageText.trim().toLowerCase();
+
+    // Consultar si existe algún documento con el mismo messageText
+    const existingAction = await collection.findOne({
+      messageText: normalizedMessage
+    });
+
+    console.log("Verificando mensaje existente:", {
+      originalMessage: messageText,
+      normalizedMessage,
+      exists: existingAction !== null
+    });
+
+    return existingAction !== null;
+  } catch (error) {
+    console.error("❌ Error verificando message.text existente:", error);
+    return false; // En caso de error, permitir procesamiento para no bloquear
+  }
+}
+
+/**
+ * Verificar si ya existe una decisión procesada con un processingTimestamp específico
+ * dentro de un rango de tiempo (30 minutos antes y 3 horas después)
+ */
+

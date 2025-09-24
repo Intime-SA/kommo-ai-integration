@@ -24,6 +24,11 @@ Este proyecto requiere las siguientes variables de entorno para funcionar correc
   - **Valor correcto**: `1293636532487008`
   - **Evento**: "Other" con parámetro personalizado "TRUE"
 
+### User Registration API
+- `USER_REGISTRATION_API_URL`: URL de la API externa para registrar usuarios
+  - Ejemplo: `https://api.ejemplo.com/register`
+  - **Nota**: Esta API recibe los datos de usuario generados automáticamente
+
 ## Variables Opcionales
 - `NODE_ENV`: Entorno de ejecución (`development`, `production`)
 - `META_PIXEL_ID`: ID del pixel de Meta (si no se especifica, usa valor por defecto)
@@ -51,6 +56,9 @@ OPENAI_API_KEY=tu-api-key-de-openai
 # Meta Conversions API - Configuración actualizada
 META_ACCESS_TOKEN=EAACRchBdq8oBPY9pkScZA5H1rKhxO9fB3Fnk52ZCmetdZBdrVk9os9E4BVho72WZAfL42cMIh99pCZCZAk1ES6Gxw8na8gnp3WlX8MR7cDkI6TfkypwDBZA3ZAvY1L64ZCWFe6RXMTJdUUBCvhD3KyYbnbonaTmhCENsQQsxqIZAaMYs5TvOzvFaeZAWBLQTqUmLwZDZD
 META_PIXEL_ID=1293636532487008
+
+# User Registration API
+USER_REGISTRATION_API_URL=https://api.ejemplo.com/register
 
 # Configuración de desarrollo
 NODE_ENV=development
