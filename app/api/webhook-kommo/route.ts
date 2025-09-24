@@ -879,6 +879,20 @@ export async function POST(request: NextRequest) {
 
         // Solo procesar con IA si el mensaje se guardó correctamente en la DB
 
+        // VALIDAR QUE EL MENSAJE NO SEA DUPLICADO POR TEXTO ANTES DE PROCESAR CON IA
+        const alreadyProcessedByMessageText = await checkExistingMessageText(message.text);
+
+        if (alreadyProcessedByMessageText) {
+          console.log(`⚠️ Mensaje ya procesado anteriormente (message.text: "${message.text}") - saltando todo el procesamiento`);
+          return NextResponse.json({
+            success: true,
+            message: "Mensaje ya procesado anteriormente por texto - no reprocesado",
+            messageText: message.text,
+            skipped: true,
+            duplicate_reason: "message_text_already_processed"
+          });
+        }
+
         // Validar si el mensaje contiene un código
         const extractedCode = extractCodeFromMessage(message.text)
         if (extractedCode) {
@@ -1087,20 +1101,6 @@ export async function POST(request: NextRequest) {
             message.contact_id,
             message.text
           )
-
-          // Verificar si ya existe el message.text procesado por el bot en la colección
-          const alreadyProcessedByMessageText = await checkExistingMessageText(message.text);
-
-
-          if (alreadyProcessedByMessageText) {
-            console.log(`⚠️ Mensaje ya procesado anteriormente (message.text: "${message.text}") - saltando procesamiento con IA`);
-            return NextResponse.json({
-              success: true,
-              message: "Mensaje ya procesado anteriormente",
-              messageText: message.text,
-              skipped: true
-            });
-          }
 
           // Process with AI usando el status efectivo, contexto histórico y reglas simplificadas
           const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules, settings, statuses)

@@ -489,7 +489,7 @@ export class KommoDatabaseService {
     const collection = await this.getCollection("messages");
 
     // Verificar si ya existe un mensaje con este id
-    const existingMessage = await collection.findOne({ id: data.id });
+    const existingMessage = await collection.findOne({ text: data.text });
 
     if (existingMessage) {
       // Si existe, actualizarlo (aunque los mensajes normalmente no cambian)
@@ -560,7 +560,7 @@ export class KommoDatabaseService {
       talkId: data.talkId,
       entityId: data.entityId,
       contactId: data.contactId,
-      messageText: data.messageText,
+      messageText: data.messageText.trim().toLowerCase(), // Normalizar el texto para consistencia
       messageCreatedAt: convertToArgentinaISO(data.messageCreatedAt),
       aiDecision: data.aiDecision,
       statusUpdateResult: data.statusUpdateResult,
@@ -3158,7 +3158,7 @@ export async function checkExistingMessageText(messageText: string): Promise<boo
     const db = await clientPromise;
     const collection = db.db("kommo").collection<BotActionDocument>("bot_actions");
 
-    // Normalizar el mensaje para comparación (trim y lowercase)
+    // Normalizar el mensaje para comparación (trim y lowercase) - consistente con cómo se guarda
     const normalizedMessage = messageText.trim().toLowerCase();
 
     // Consultar si existe algún documento con el mismo messageText
