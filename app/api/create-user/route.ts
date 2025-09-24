@@ -88,28 +88,12 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 
-  // Ejecutar el proceso de creación de usuario en paralelo (background)
-  processUserCreationAsync(leadId, config, body);
-
-  // Devolver respuesta inmediata al webhook (dentro de 2 segundos)
-  console.log(`✅ Webhook acknowledged for lead ${leadId} - processing in background`);
-  return NextResponse.json({
-    success: true,
-    message: "Webhook received and user creation started",
-    leadId: leadId,
-    status: "processing"
-  });
-}
-
-// Función para procesar la creación de usuario en background
-async function processUserCreationAsync(leadId: string, config: KommoApiConfig, originalBody: Record<string, any>) {
   try {
-    console.log(`🚀 Starting background user creation process for lead ${leadId}`);
-
     // Ejecutar el proceso completo de creación de usuario
+    console.log(`🚀 Starting user creation process for lead ${leadId}`);
     const result = await createUserFromLead(leadId, config);
 
-    console.log('✅ User creation completed successfully in background:', {
+    console.log('✅ User creation completed successfully:', {
       leadId: result.leadId,
       contactId: result.contactId,
       username: result.username
@@ -118,13 +102,14 @@ async function processUserCreationAsync(leadId: string, config: KommoApiConfig, 
     // Verificar si la respuesta de la API de registro fue exitosa
     const registrationResponse = result.registrationResult;
 
+    let leadNameUpdated = false;
     if (registrationResponse && registrationResponse.success === true) {
       console.log(`🔄 Registration successful, updating lead name to username: ${result.username}`);
 
       // Actualizar el nombre del lead con el username
-      const nameUpdateSuccess = await updateLeadName(leadId, result.username, config);
+      leadNameUpdated = await updateLeadName(leadId, result.username, config);
 
-      if (nameUpdateSuccess) {
+      if (leadNameUpdated) {
         console.log(`✅ Lead name updated successfully to: ${result.username}`);
       } else {
         console.error(`❌ Failed to update lead name for lead ${leadId}`);
@@ -133,13 +118,26 @@ async function processUserCreationAsync(leadId: string, config: KommoApiConfig, 
       console.log(`⚠️ Registration was not successful, skipping lead name update. Response:`, registrationResponse);
     }
 
-  } catch (error) {
-    console.error(`❌ Error in background user creation process for lead ${leadId}:`, error);
+    // Devolver respuesta exitosa con detalles del proceso
+    return NextResponse.json({
+      success: true,
+      message: "User creation completed successfully",
+      leadId: leadId,
+      contactId: result.contactId,
+      username: result.username,
+      leadNameUpdated: leadNameUpdated,
+      registrationResult: registrationResponse
+    });
 
-    // Aquí podrías agregar lógica de manejo de errores como:
-    // - Reintentar la operación
-    // - Notificar a administradores
-    // - Actualizar status de error en Kommo
-    // - etc.
+  } catch (error) {
+    console.error(`❌ Error in user creation process for lead ${leadId}:`, error);
+
+    // Devolver respuesta de error con detalles
+    return NextResponse.json({
+      success: false,
+      error: "Failed to create user",
+      leadId: leadId,
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 });
   }
 }
