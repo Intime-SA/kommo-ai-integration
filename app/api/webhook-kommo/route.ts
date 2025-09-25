@@ -106,12 +106,19 @@ export async function POST(request: NextRequest) {
         }
         tempWebhookData.pipelineIds.push(value)
       }
-      // Extraer lead_id o entity_id para consultar API si no hay pipeline_id
+      // Extraer lead_id o entity_id de leads para consultar API si no hay pipeline_id
       if (key.includes("leads[") && (key.includes("[id]") || key.includes("[entity_id]"))) {
         if (!tempWebhookData.leadIds) {
           tempWebhookData.leadIds = []
         }
         tempWebhookData.leadIds.push(value)
+      }
+      // Extraer lead_id de messages (element_id o entity_id) para consultar API
+      if (key.includes("message[") && (key.includes("[element_id]") || key.includes("[entity_id]"))) {
+        if (!tempWebhookData.messageLeadIds) {
+          tempWebhookData.messageLeadIds = []
+        }
+        tempWebhookData.messageLeadIds.push(value)
       }
     }
 
@@ -124,33 +131,43 @@ export async function POST(request: NextRequest) {
     }
 
     // Si no hay pipeline_id en el webhook, intentar obtenerlo consultando la API con lead_id
-    if (!pipelineId && tempWebhookData.leadIds && tempWebhookData.leadIds.length > 0) {
-      const leadId = tempWebhookData.leadIds[0]
-      console.log(`🔍 Pipeline ID no encontrado en webhook, consultando API para lead ${leadId}...`)
+    if (!pipelineId) {
+      // Primero intentar con leadIds de leads, luego con messageLeadIds de messages
+      const leadIdSource = tempWebhookData.leadIds && tempWebhookData.leadIds.length > 0
+        ? tempWebhookData.leadIds[0]
+        : tempWebhookData.messageLeadIds && tempWebhookData.messageLeadIds.length > 0
+          ? tempWebhookData.messageLeadIds[0]
+          : null
 
-      try {
-        const config: KommoApiConfig = {
-          subdomain: process.env.KOMMO_SUBDOMAIN || "",
-        }
+      if (leadIdSource) {
+        console.log(`🔍 Pipeline ID no encontrado en webhook, consultando API para lead ${leadIdSource}...`)
 
-        if (!config.subdomain) {
-          console.error("❌ KOMMO_SUBDOMAIN no configurado para validación de pipeline")
-          return NextResponse.json({
-            success: false,
-            error: "KOMMO_SUBDOMAIN no configurado"
-          }, { status: 500 })
-        }
+        try {
+          const config: KommoApiConfig = {
+            subdomain: process.env.KOMMO_SUBDOMAIN || "",
+          }
 
-        const leadInfo = await getLeadInfo(leadId, config)
-        if (leadInfo && leadInfo.pipeline_id) {
-          pipelineId = leadInfo.pipeline_id.toString()
-          console.log(`✅ Pipeline ID obtenido de API para lead ${leadId}: ${pipelineId}`)
-        } else {
-          console.log(`⚠️ No se pudo obtener pipeline_id del lead ${leadId} desde API de Kommo`)
+          if (!config.subdomain) {
+            console.error("❌ KOMMO_SUBDOMAIN no configurado para validación de pipeline")
+            return NextResponse.json({
+              success: false,
+              error: "KOMMO_SUBDOMAIN no configurado"
+            }, { status: 500 })
+          }
+
+          const leadInfo = await getLeadInfo(leadIdSource, config)
+          if (leadInfo && leadInfo.pipeline_id) {
+            pipelineId = leadInfo.pipeline_id.toString()
+            console.log(`✅ Pipeline ID obtenido de API para lead ${leadIdSource}: ${pipelineId}`)
+          } else {
+            console.log(`⚠️ No se pudo obtener pipeline_id del lead ${leadIdSource} desde API de Kommo`)
+          }
+        } catch (error) {
+          console.error(`❌ Error al consultar pipeline_id del lead ${leadIdSource}:`, error)
+          // Continuar sin cortar la ejecución por ahora
         }
-      } catch (error) {
-        console.error(`❌ Error al consultar pipeline_id del lead ${leadId}:`, error)
-        // Continuar sin cortar la ejecución por ahora
+      } else {
+        console.log(`⚠️ No se encontraron lead IDs en el webhook para consultar pipeline`)
       }
     }
 
