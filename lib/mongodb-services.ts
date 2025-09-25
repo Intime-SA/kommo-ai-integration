@@ -1189,151 +1189,91 @@ export class KommoDatabaseService {
   async getSendMetaLogs(
     params: LogsQueryParams
   ): Promise<{ logs: SendMetaLog[]; total: number }> {
-    const collection = await this.getCollection("leads");
+    const collection = await this.getCollection("send_meta");
 
-    // Construir pipeline de agregación para send_meta
-    const pipeline: any[] = [];
+    // Construir filtros para consulta directa
+    const query: any = {};
 
-    // Filtros de fecha (usar updatedAt que es cuando se actualizó el envío)
+    // Filtros de fecha (usar timestamp que está directamente en el documento)
     if (params.startDate || params.endDate) {
       const dateFilter: any = {};
       if (params.startDate) dateFilter.$gte = new Date(params.startDate);
       if (params.endDate) dateFilter.$lte = new Date(params.endDate);
-      pipeline.push({ $match: { updatedAt: dateFilter } });
+      query.timestamp = dateFilter;
     }
 
-    // Filtros adicionales
-    const matchFilter: any = {};
-    const andConditions: any[] = [];
+    // Filtros específicos - buscar en messageData
+    if (params.contactId) {
+      query["messageData.contactId"] = params.contactId;
+    }
+    if (params.leadId) {
+      query["messageData.elementId"] = params.leadId; // leadId se guarda en elementId
+    }
+    if (params.userName) {
+      query["messageData.author.name"] = { $regex: params.userName, $options: "i" };
+    }
 
-    // Filtros específicos
-    if (params.contactId) andConditions.push({ contactId: params.contactId });
-    if (params.leadId) andConditions.push({ leadId: params.leadId });
-    if (params.userName)
-      andConditions.push({
-        "client.name": { $regex: params.userName, $options: "i" },
-      });
-
-    // Filtro por searchTerm (busca en contactId, leadId, client.name o extractedCode)
+    // Filtro por searchTerm (busca en contactId, leadId, author.name o extractedCode)
     if (params.searchTerm) {
       const searchRegex = { $regex: params.searchTerm, $options: "i" };
-      andConditions.push({
-        $or: [
-          { contactId: searchRegex },
-          { leadId: searchRegex },
-          { "client.name": searchRegex },
-          { "meta_data.extractedCode": searchRegex },
-        ],
-      });
+      query.$or = [
+        { "messageData.contactId": searchRegex },
+        { "messageData.elementId": searchRegex },
+        { "messageData.author.name": searchRegex },
+        { extractedCode: searchRegex },
+      ];
     }
 
-    if (andConditions.length > 0) {
-      if (andConditions.length === 1) {
-        Object.assign(matchFilter, andConditions[0]);
-      } else {
-        matchFilter.$and = andConditions;
-      }
-    }
-
-    if (Object.keys(matchFilter).length > 0) {
-      pipeline.push({ $match: matchFilter });
-    }
-
-    // Lookup para obtener información del usuario/contacto
-    pipeline.push({
-      $lookup: {
-        from: "users",
-        localField: "contactId",
-        foreignField: "contactId",
-        as: "userInfo",
-      },
-    });
-
-    // Lookup para obtener información del lead
-    pipeline.push({
-      $lookup: {
-        from: "leads",
-        localField: "leadId",
-        foreignField: "leadId",
-        as: "leadInfo",
-      },
-    });
-
-    // Proyección de los campos necesarios
-    pipeline.push({
-      $project: {
-        id: "$_id",
-        timestamp: { $ifNull: ["$updatedAt", "$createdAt"] },
-        type: { $literal: "send_meta" },
-        contactId: "$contactId",
-        leadId: "$leadId",
-        talkId: "$talkId",
-        extractedCode: "$meta_data.extractedCode",
-        conversionData: "$meta_data.conversionData",
-        conversionResults: "$meta_data.conversionResults",
-        success: "$meta_data.success",
-        messageText: "$messageText",
-        userName: {
-          $ifNull: [{ $arrayElemAt: ["$userInfo.name", 0] }, "$client.name"],
-        },
-        clientId: {
-          $ifNull: [{ $arrayElemAt: ["$userInfo.clientId", 0] }, "$client.id"],
-        },
-        sourceName: {
-          $ifNull: [
-            { $arrayElemAt: ["$userInfo.sourceName", 0] },
-            "$sourceName",
-          ],
-        },
-      },
-    });
-
-    // Ordenamiento con estabilidad (primero por campo principal, luego por id para consistencia)
+    // Ordenamiento
     const sortField =
       params.sortBy === "timestamp"
         ? "timestamp"
         : params.sortBy === "userName"
-        ? "userName"
+        ? "messageData.author.name"
         : params.sortBy === "contactId"
-        ? "contactId"
+        ? "messageData.contactId"
         : params.sortBy === "leadId"
-        ? "leadId"
+        ? "messageData.elementId"
         : params.sortBy === "extractedCode"
         ? "extractedCode"
         : params.sortBy === "type"
         ? "type"
         : "timestamp";
     const sortOrder = params.sortOrder === "asc" ? 1 : -1;
-    pipeline.push({ $sort: { [sortField]: sortOrder, id: 1 } });
+    const sort = { [sortField]: sortOrder, _id: 1 };
 
     // Paginación
     const limit = params.limit || 50;
     const offset = params.offset || 0;
-    pipeline.push({ $skip: offset }, { $limit: limit });
 
-    const logs = await collection.aggregate(pipeline).toArray();
+    // Ejecutar consulta principal
+    const logs = await collection
+      .find(query)
+      .sort(sort as any)
+      .skip(offset)
+      .limit(limit)
+      .toArray();
 
-    // Contar total usando consulta separada sin paginación
-    const countPipeline = [...pipeline.slice(0, -2), { $count: "total" }]; // Quitar skip y limit
-    const countResult = await collection.aggregate(countPipeline).toArray();
-    const total = countResult.length > 0 ? countResult[0].total : 0;
+    // Contar total
+    const total = await collection.countDocuments(query);
 
     return {
       logs: logs.map((log, index) => ({
-        ...log,
-        index: offset + index + 1,
-        timestamp:
-          log.timestamp instanceof Date
-            ? log.timestamp.toISOString()
-            : log.timestamp,
-        userName: log.userName || "Usuario desconocido",
-        clientId: log.clientId || "",
-        sourceName: log.sourceName || "",
-        talkId: log.talkId || "",
+        id: log._id.toString(),
+        timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : log.timestamp,
+        type: "send_meta" as const,
+        contactId: log.messageData?.contactId || "",
+        leadId: log.messageData?.elementId || "",
+        talkId: log.messageData?.talkId || "",
         extractedCode: log.extractedCode || "",
         conversionData: log.conversionData || [],
         conversionResults: log.conversionResults || [],
         success: log.success || false,
+        messageText: log.messageData?.text || "",
+        userName: log.messageData?.author?.name || "Usuario desconocido",
+        clientId: "", // No disponible en sendMeta directamente
+        sourceName: "", // No disponible en sendMeta directamente
+        index: offset + index + 1,
       })) as SendMetaLog[],
       total,
     };
@@ -2129,7 +2069,7 @@ export async function sendConversionToMeta(
           event_time: Math.floor(Date.now() / 1000),
           action_source: "website",
           event_source_url:
-            leadData.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
+            leadData.eventSourceUrl || "https://kommo-ai-integration.vercel.app",
           user_data: {
             client_ip_address: leadData.ip ? leadData.ip : undefined,
             client_user_agent: leadData.userAgent
@@ -2417,6 +2357,23 @@ export async function findContactById(contactId: string) {
     return contact;
   } catch (error) {
     console.error("❌ Error al buscar contacto por ID:", error);
+    return null;
+  }
+}
+
+// Función para buscar registro en send_meta por leadId (entityId)
+export async function findSendMetaByLeadId(leadId: string) {
+  try {
+    const client = await clientPromise;
+    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
+    const collection = db.collection("send_meta");
+
+    const record = await collection.findOne({
+      "messageData.entityId": leadId
+    });
+    return record;
+  } catch (error) {
+    console.error("❌ Error al buscar registro en send_meta por leadId:", error);
     return null;
   }
 }

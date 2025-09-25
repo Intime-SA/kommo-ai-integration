@@ -447,7 +447,7 @@ export async function POST(request: NextRequest) {
                       event_name: "ConversacionCRM1",
                       event_time: Math.floor(Date.now() / 1000),
                       action_source: "website",
-                      event_source_url: tokenVisit.lead.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
+                      event_source_url: tokenVisit.lead.eventSourceUrl || "https://kommo-ai-integration.vercel.app/",
                       user_data: {
                         client_ip_address: tokenVisit.lead.ip ? tokenVisit.lead.ip : undefined,
                         client_user_agent: tokenVisit.lead.userAgent ? tokenVisit.lead.userAgent : undefined,
@@ -933,7 +933,7 @@ export async function POST(request: NextRequest) {
                     event_name: "ConversacionCRM1",
                     event_time: Math.floor(Date.now() / 1000),
                     action_source: "website",
-                    event_source_url: tokenVisit.lead.eventSourceUrl || "https://c81af03c6bcf.ngrok-free.app",
+                    event_source_url: tokenVisit.lead.eventSourceUrl || "https://kommo-ai-integration.vercel.app",
                     user_data: {
                       client_ip_address: tokenVisit.lead.ip ? tokenVisit.lead.ip : undefined,
                       client_user_agent: tokenVisit.lead.userAgent ? tokenVisit.lead.userAgent : undefined,
