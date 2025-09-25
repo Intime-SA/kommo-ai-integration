@@ -89,10 +89,89 @@ export async function POST(request: NextRequest) {
     // Parse the webhook data
     const body = await request.text()
     logWebhookReceived(body)
-    
 
-    // Parse form data (Kommo sends form-encoded data)
+    // VALIDACIÓN INICIAL DE PIPELINE: Solo procesar webhooks del pipeline 11862040
+    console.log("🔍 Iniciando validación de pipeline...")
+
+    // Parse form data para extraer pipeline_id y datos del webhook
     const formData = new URLSearchParams(body)
+    const tempWebhookData: any = {}
+
+    // Extraer datos básicos del form para validación de pipeline
+    for (const [key, value] of formData.entries()) {
+      // Extraer pipeline_id de leads (add, status, delete)
+      if (key.includes("leads[") && key.includes("[pipeline_id]")) {
+        if (!tempWebhookData.pipelineIds) {
+          tempWebhookData.pipelineIds = []
+        }
+        tempWebhookData.pipelineIds.push(value)
+      }
+      // Extraer lead_id o entity_id para consultar API si no hay pipeline_id
+      if (key.includes("leads[") && (key.includes("[id]") || key.includes("[entity_id]"))) {
+        if (!tempWebhookData.leadIds) {
+          tempWebhookData.leadIds = []
+        }
+        tempWebhookData.leadIds.push(value)
+      }
+    }
+
+    // Intentar obtener pipeline_id del webhook
+    let pipelineId: string | null = null
+
+    if (tempWebhookData.pipelineIds && tempWebhookData.pipelineIds.length > 0) {
+      pipelineId = tempWebhookData.pipelineIds[0] // Tomar el primer pipeline_id encontrado
+      console.log(`✅ Pipeline ID encontrado en webhook: ${pipelineId}`)
+    }
+
+    // Si no hay pipeline_id en el webhook, intentar obtenerlo consultando la API con lead_id
+    if (!pipelineId && tempWebhookData.leadIds && tempWebhookData.leadIds.length > 0) {
+      const leadId = tempWebhookData.leadIds[0]
+      console.log(`🔍 Pipeline ID no encontrado en webhook, consultando API para lead ${leadId}...`)
+
+      try {
+        const config: KommoApiConfig = {
+          subdomain: process.env.KOMMO_SUBDOMAIN || "",
+        }
+
+        if (!config.subdomain) {
+          console.error("❌ KOMMO_SUBDOMAIN no configurado para validación de pipeline")
+          return NextResponse.json({
+            success: false,
+            error: "KOMMO_SUBDOMAIN no configurado"
+          }, { status: 500 })
+        }
+
+        const leadInfo = await getLeadInfo(leadId, config)
+        if (leadInfo && leadInfo.pipeline_id) {
+          pipelineId = leadInfo.pipeline_id.toString()
+          console.log(`✅ Pipeline ID obtenido de API para lead ${leadId}: ${pipelineId}`)
+        } else {
+          console.log(`⚠️ No se pudo obtener pipeline_id del lead ${leadId} desde API de Kommo`)
+        }
+      } catch (error) {
+        console.error(`❌ Error al consultar pipeline_id del lead ${leadId}:`, error)
+        // Continuar sin cortar la ejecución por ahora
+      }
+    }
+
+    // Validar que el pipeline sea el correcto (11862040)
+    if (pipelineId && pipelineId !== "11862040") {
+      console.log(`🚫 Webhook RECHAZADO: Pipeline ${pipelineId} no autorizado. Solo se procesan webhooks del pipeline 11862040`)
+      return NextResponse.json({
+        success: false,
+        message: `Webhook rechazado: Pipeline ${pipelineId} no autorizado. Solo se procesan webhooks del pipeline 11862040`,
+        pipeline_id: pipelineId,
+        required_pipeline: "11862040"
+      }, { status: 200 }) // 200 porque es un procesamiento válido pero rechazado
+    }
+
+    if (pipelineId === "11862040") {
+      console.log(`✅ Validación de pipeline exitosa: Procesando webhook del pipeline ${pipelineId}`)
+    } else {
+      console.log(`⚠️ No se pudo validar pipeline (posiblemente webhook sin leads), continuando procesamiento...`)
+    }
+
+    // Continuar parseando form data (Kommo sends form-encoded data)
     const webhookData: Partial<KommoWebhookData> = {}
 
     // Parse the form data into our structure
