@@ -142,7 +142,7 @@ function extractCodeFromMessage(messageText) {
   console.log("Extrayendo código de mensaje:", messageText);
 
   // Patrón para buscar códigos generados por nanoid (incluyen guiones y caracteres especiales)
-  const codePattern = /(?:descuento|codigo|código|token)\s*:\s*([A-Za-z0-9_-]{1,21})\.?/i;
+  const codePattern = /(?:descuento|codigo|código|token|promocion|promoción)\s*:\s*([A-Za-z0-9_-]{1,21})\.?/i;
   const match = messageText.match(codePattern);
   console.log("Match del patrón principal:", match);
 
@@ -165,6 +165,20 @@ function extractCodeFromMessage(messageText) {
   }
 
   return null;
+}
+
+// Función de prueba simple para extracción de códigos
+function testCodeExtraction() {
+  console.log("🔍 PRUEBA DE EXTRACCIÓN DE CÓDIGOS");
+  console.log("==================================");
+
+  const testMessage = "Codigo Promocion: oowMSNzI. Hola me gustaria recibir el b0nus!!!";
+  const extracted = extractCodeFromMessage(testMessage);
+
+  console.log(`Mensaje: "${testMessage}"`);
+  console.log(`Código extraído: "${extracted}"`);
+
+  return extracted;
 }
 
 // Función de prueba completa
@@ -412,6 +426,7 @@ module.exports = {
   checkSendMetaCollection,
   checkTokenVisitCollection,
   runDiagnostic,
+  testCodeExtraction,
   extractCodeFromMessage,
   testSeparateMetaLogs,
   cleanupOldMetaLogs,

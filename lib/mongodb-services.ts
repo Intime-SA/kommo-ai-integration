@@ -2080,9 +2080,9 @@ function convertToUTC(date: Date): Date {
 export function extractCodeFromMessage(messageText: string): string | null {
   console.log("Extrayendo código de mensaje:", messageText);
   // Patrón para buscar códigos generados por nanoid (incluyen guiones y caracteres especiales)
-  // Busca patrones como "Descuento: Nv5M-ilY." o "Código: AbCdEfGh-"
+  // Busca patrones como "Descuento: Nv5M-ilY.", "Código: AbCdEfGh-" o "Promocion: oowMSNzI."
   const codePattern =
-    /(?:descuento|codigo|código|token)\s*:\s*([A-Za-z0-9_-]{1,21})\.?/i;
+    /(?:descuento|codigo|código|token|promocion|promoción)\s*:\s*([A-Za-z0-9_-]{1,21})\.?/i;
   const match = messageText.match(codePattern);
   console.log("Match del patrón principal:", match);
   if (match && match[1]) {
