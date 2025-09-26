@@ -976,7 +976,7 @@ export async function POST(request: NextRequest) {
         // Solo procesar con IA si el mensaje se guardó correctamente en la DB
 
         // VALIDAR QUE EL MENSAJE NO SEA DUPLICADO POR TEXTO ANTES DE PROCESAR CON IA
-        const alreadyProcessedByMessageText = await checkExistingMessageText(message.text);
+        const alreadyProcessedByMessageText = await checkExistingMessageText(message.text, message.entity_id, message.created_at);
 
         if (alreadyProcessedByMessageText) {
           console.log(`⚠️ Mensaje ya procesado anteriormente (message.text: "${message.text}") - saltando todo el procesamiento`);

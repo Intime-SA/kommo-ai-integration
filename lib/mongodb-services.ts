@@ -5,6 +5,7 @@ import {
   logWelcomeBotDetection,
   logWelcomeBotLaunched,
   logWelcomeBotError,
+  logger,
 } from "./logger";
 
 // Función helper para obtener fecha hace N horas
@@ -3106,11 +3107,13 @@ export async function detectAndLaunchWelcomeBot(
 }
 
 /**
- * Verificar si ya existe un message.text procesado por el bot en la colección
+ * Verificar si ya existe un mensaje procesado con el mismo texto, entityId y dentro del rango de tiempo
  * @param messageText El texto del mensaje a verificar
+ * @param entityId El ID de la entidad
+ * @param processingTimestamp El timestamp de procesamiento para calcular el rango de ±24 horas
  * @returns true si el mensaje ya fue procesado, false en caso contrario
  */
-export async function checkExistingMessageText(messageText: string): Promise<boolean> {
+export async function checkExistingMessageText(messageText: string, entityId: string, processingTimestamp: string): Promise<boolean> {
   try {
     const db = await clientPromise;
     const collection = db.db("kommo").collection<BotActionDocument>("bot_actions");
@@ -3118,14 +3121,39 @@ export async function checkExistingMessageText(messageText: string): Promise<boo
     // Normalizar el mensaje para comparación (trim y lowercase) - consistente con cómo se guarda
     const normalizedMessage = messageText.trim().toLowerCase();
 
-    // Consultar si existe algún documento con el mismo messageText
-    const existingAction = await collection.findOne({
-      messageText: normalizedMessage
-    });
+    // Calcular el rango de tiempo: ±24 horas alrededor del processingTimestamp
+    const processingDate = convertToArgentinaISO(processingTimestamp);
+      logger.info("processingDate", processingDate);
+      const startDate = new Date(new Date(processingDate).getTime() - 24 * 60 * 60 * 1000);
+      logger.info("startDate", startDate);
+      // 24 horas atrás
+      const endDate = new Date(new Date(processingDate).getTime() + 24 * 60 * 60 * 1000);   // 24 horas adelante
+      logger.info("endDate", endDate);
+    
+    // Convertir a strings ISO para la consulta (compatible con el tipo string del interface)
+    const startDateISO = startDate.toISOString();
+    const endDateISO = endDate.toISOString();
 
-    console.log("Verificando mensaje existente:", {
+    // Consultar si existe algún documento con los mismos criterios
+    const existingAction = await collection.findOne({
+      messageText: normalizedMessage,
+      entityId: entityId,
+      processingTimestamp: {
+        $gte: startDateISO,
+        $lte: endDateISO
+      }
+    });
+    logger.info("existingAction", existingAction);
+
+    logger.info("Verificando mensaje existente:", {
       originalMessage: messageText,
       normalizedMessage,
+      entityId,
+      processingTimestamp,
+      dateRange: {
+        start: startDate.toISOString(),
+        end: endDate.toISOString()
+      },
       exists: existingAction !== null
     });
 
