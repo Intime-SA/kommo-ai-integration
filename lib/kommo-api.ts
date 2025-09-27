@@ -299,7 +299,7 @@ export function generateUsername(contactName: string, contactId: number): string
 }
 
 // Register user in external API
-export async function registerUser(username: string, parentId: string = "23534"): Promise<any> {
+export async function registerUser(username: string, parentId: string = "23532"): Promise<any> {
   const startTime = Date.now()
   const url = process.env.USER_REGISTRATION_API_URL || "https://greenbet.uno/api/create-user" // TODO: Add to env vars
 
