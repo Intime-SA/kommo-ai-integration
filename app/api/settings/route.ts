@@ -62,6 +62,7 @@ export async function PUT(request: NextRequest) {
     if (body.accountCBU !== undefined) updateData.accountCBU = body.accountCBU;
     if (body.context !== undefined) updateData.context = body.context;
     if (body.message !== undefined) updateData.message = body.message;
+    if (body.accountName !== undefined) updateData.accountName = body.accountName;
 
     // Actualizar el documento
     const updatedSetting = await updateSettingsById(body.id, updateData);
