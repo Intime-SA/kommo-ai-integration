@@ -281,9 +281,9 @@ export async function getCurrentLeadStatus(leadId: string, config: KommoApiConfi
 
 // Generate username from contact name and ID
 export function generateUsername(contactName: string, contactId: number): string {
-  // Take first 3 letters of contact name, remove spaces and special characters
+  // Take first 2 letters of contact name, remove spaces and special characters
   const cleanName = contactName.replace(/[^a-zA-Z]/g, '').toLowerCase()
-  const firstThreeLetters = cleanName.substring(0, 3).padEnd(3, 'x') // Pad with 'x' if name is shorter than 3 chars
+  const firstTwoLetters = cleanName.substring(0, 2).padEnd(2, 'x') // Pad with 'x' if name is shorter than 2 chars
 
   // Take first 3 characters of contactId as string
   const contactIdStr = contactId.toString()
@@ -292,8 +292,8 @@ export function generateUsername(contactName: string, contactId: number): string
   // Generate 2 random numbers (00-99)
   const randomNum = Math.floor(Math.random() * 100).toString().padStart(2, '0')
 
-  // Combine: 3 letters from name + 3 chars from contactId + 2 random numbers = exactly 8 characters
-  const username = `${firstThreeLetters}${firstThreeContactId}${randomNum}`
+  // Combine: 2 letters from name + 3 chars from contactId + 2 random numbers + 'g' = exactly 8 characters
+  const username = `${firstTwoLetters}${firstThreeContactId}${randomNum}g`
 
   return username
 }
