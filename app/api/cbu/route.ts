@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
 
     // Obtener el CBU del primer setting (asumiendo que hay uno principal)
     const accountCBU = settings[0].accountCBU;
+    const accountName = settings[0].accountName;
 
     if (!accountCBU) {
       console.error("❌ CBU no encontrado en settings");
@@ -65,6 +66,14 @@ export async function POST(request: NextRequest) {
         values: [
           {
             value: accountCBU
+          }
+        ]
+      },
+      {
+        field_id: 977359,
+        values: [
+          {
+            value: accountName
           }
         ]
       }
@@ -91,8 +100,10 @@ export async function POST(request: NextRequest) {
       data: {
         leadId,
         cbu: accountCBU,
+        accountName: accountName,
         subdomain,
-        fieldId: 977357
+        fieldId: 977357,
+        fieldIdName: 977359
       }
     });
 
