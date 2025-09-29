@@ -1904,6 +1904,7 @@ export class KommoDatabaseService {
       message: setting.message,
       createdAt: setting.createdAt,
       updatedAt: setting.updatedAt,
+      accountName: setting.accountName,
     } as SettingsDocument;
   }
 
