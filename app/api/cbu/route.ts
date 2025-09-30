@@ -45,6 +45,8 @@ export async function POST(request: NextRequest) {
     // Obtener el CBU del primer setting (asumiendo que hay uno principal)
     const accountCBU = settings[0].accountCBU;
     const accountName = settings[0].accountName;
+    console.log("accountName", accountName);
+    console.log("accountCBU", accountCBU);
 
     if (!accountCBU) {
       console.error("❌ CBU no encontrado en settings");
