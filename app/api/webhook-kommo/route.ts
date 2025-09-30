@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
     for (const [key, value] of formData.entries()) {
       if (key.includes("message[add][0]")) {
         if (!webhookData.message) {
-          webhookData.message = { add: [{ id: "", chat_id: "", talk_id: "", contact_id: "", text: "", created_at: "", element_type: "", entity_type: "", element_id: "", entity_id: "", type: "incoming", author: { id: "", type: "", name: "" } }] }
+          webhookData.message = { add: [{ id: "", chat_id: "", talk_id: "", contact_id: "", text: "", created_at: "", element_type: "", entity_type: "", element_id: "", entity_id: "", type: "incoming", author: { id: "", type: "", name: "" }, attachment: { type: "", link: "", file_name: "" } }] }
         }
 
         const field = key.replace("message[add][0][", "").replace("]", "")
@@ -970,7 +970,8 @@ export async function POST(request: NextRequest) {
           elementId: message.element_id,
           entityId: message.entity_id,
           type: message.type as "incoming" | "outgoing",
-          author: message.author
+          author: message.author,
+          attachment: message.attachment
         })
 
         // Solo procesar con IA si el mensaje se guardó correctamente en la DB
@@ -1091,7 +1092,7 @@ export async function POST(request: NextRequest) {
             })
           }
 
-          logMessageProcessing(message.text, message.author?.name || "Cliente", message.talk_id, message.entity_id)
+          logMessageProcessing(message.text, message.author?.name || "Cliente", message.talk_id, message.entity_id, message.attachment)
 
           // Obtener la configuración de Kommo
           const config: KommoApiConfig = {
@@ -1199,7 +1200,7 @@ export async function POST(request: NextRequest) {
           )
 
           // Process with AI usando el status efectivo, contexto histórico y reglas simplificadas
-          const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules, settings, statuses)
+          const aiDecision = await processMessageWithAI(message.text, effectiveStatus, message.talk_id, contactContext, simplifiedRules, settings, statuses, message.attachment)
 
           const processedMessage: ProcessedMessage = {
             talkId: message.talk_id,

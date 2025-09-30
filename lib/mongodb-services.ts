@@ -87,6 +87,11 @@ export interface MessageDocument {
     type: string;
     name: string;
   };
+  attachment?: {
+    type: string;
+    link: string;
+    file_name: string;
+  };
   updatedAt: string; // ISO string en horario Argentina
 }
 
@@ -488,6 +493,11 @@ export class KommoDatabaseService {
       type: string;
       name: string;
     };
+    attachment?: {
+      type: string;
+      link: string;
+      file_name: string;
+    };
   }): Promise<MessageDocument> {
     const collection = await this.getCollection("messages");
 
@@ -507,6 +517,7 @@ export class KommoDatabaseService {
         entityId: data.entityId,
         type: data.type,
         author: data.author,
+        attachment: data.attachment,
         updatedAt: getCurrentArgentinaISO(),
       };
 
@@ -529,6 +540,7 @@ export class KommoDatabaseService {
       entityId: data.entityId,
       type: data.type,
       author: data.author,
+      attachment: data.attachment,
       updatedAt: getCurrentArgentinaISO(),
     };
 

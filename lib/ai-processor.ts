@@ -105,6 +105,11 @@ export async function processMessageWithAI(
   rules?: Array<{ priority: number; rule: string }>,
   settings?: SettingsDocument | null | undefined,
   statuses?: StatusDocument[] | null,
+  attachment?: {
+    type: string;
+    link: string;
+    file_name: string;
+  },
 ): Promise<AIDecision> {
   const systemMessage = `
   ${settings?.context ? `📌 CONTEXTO: ${settings.context}` : ''}
@@ -132,8 +137,17 @@ Analiza este mensaje de cliente:
 Mensaje: "${messageText}"
 Status actual: "${currentStatus}"
 Talk ID: "${talkId}"
+${attachment ? `Archivo adjunto: ${attachment.type} - ${attachment.file_name}` : ''}
 
 ${contactContext ? formatContactContext(contactContext, settings) : ''}
+
+${attachment ? `
+📎 CONSIDERACIONES PARA ARCHIVOS ADJUNTOS:
+- Si el cliente envía una imagen, documento o archivo, probablemente es información relevante (comprobante, documento de identidad, etc.)
+- Los archivos adjuntos suelen indicar que el cliente está avanzando en el proceso
+- Si es un comprobante de pago, NO cambiar automáticamente a "Cargo" - enviar a "Revisar" para verificación manual
+- Si es documentación solicitada, mantener el status actual o cambiar a uno apropiado según el contexto
+` : ''}
 
 Determina:
 1. Si el status debe cambiar

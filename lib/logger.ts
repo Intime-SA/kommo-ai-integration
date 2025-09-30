@@ -120,6 +120,11 @@ class Logger {
         entity_id: message.entity_id,
         type: message.type,
         author: message.author,
+        attachment: message.attachment ? {
+          type: message.attachment.type,
+          file_name: message.attachment.file_name,
+          link: message.attachment.link ? `${message.attachment.link}` : "No disponible"
+        } : "Sin adjunto"
       })
     }
 
@@ -201,8 +206,9 @@ class Logger {
     }
   }
 
-  messageProcessing(text: string, author: string, talkId?: string, leadId?: string) {
-    this.info(`📨 Procesando mensaje: "${text}" de ${author}`, undefined, { talkId, leadId })
+  messageProcessing(text: string, author: string, talkId?: string, leadId?: string, attachment?: any) {
+    const attachmentInfo = attachment ? ` [ADJUNTO: ${attachment.type} - ${attachment.file_name}]` : ""
+    this.info(`📨 Procesando mensaje: "${text}"${attachmentInfo} de ${author}`, undefined, { talkId, leadId })
   }
 
   leadStatusQuery(leadId: string) {
@@ -425,7 +431,7 @@ export const logger = new Logger()
 // Exportar funciones de conveniencia para mantener compatibilidad
 export const logWebhookReceived = (body: string) => logger.webhookReceived(body)
 export const logWebhookParsed = (account: any, message?: any, talkAdd?: any, leads?: any, talkUpdate?: any, unsortedAdd?: any, leadsDelete?: any, unsortedDelete?: any) => logger.webhookParsed(account, message, talkAdd, leads, talkUpdate, unsortedAdd, leadsDelete, unsortedDelete)
-export const logMessageProcessing = (text: string, author: string, talkId?: string, leadId?: string) => logger.messageProcessing(text, author, talkId, leadId)
+export const logMessageProcessing = (text: string, author: string, talkId?: string, leadId?: string, attachment?: any) => logger.messageProcessing(text, author, talkId, leadId, attachment)
 export const logLeadStatusQuery = (leadId: string) => logger.leadStatusQuery(leadId)
 export const logLeadStatusRetrieved = (leadId: string, status: string, statusId: string) => logger.leadStatusRetrieved(leadId, status, statusId)
 export const logAiDecision = (decision: any, talkId?: string, leadId?: string) => logger.aiDecision(decision, talkId, leadId)

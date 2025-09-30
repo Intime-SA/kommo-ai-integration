@@ -106,6 +106,11 @@ export interface KommoWebhookData {
         type: string
         name: string
       }
+      attachment?: {
+        type: string
+        link: string
+        file_name: string
+      }
     }>
   }
   leads?: {
