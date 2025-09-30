@@ -8,7 +8,8 @@ import {
   logLeadStatusFound,
   logOutgoingHttpRequest,
   logIncomingHttpResponse,
-  logHttpError
+  logHttpError,
+  logger
 } from "./logger"
 
 export interface KommoApiConfig {
@@ -63,6 +64,7 @@ export async function updateLeadCustomFields(leadId: string, customFieldsValues:
   const startTime = Date.now()
   const url = `https://${config.subdomain}.kommo.com/api/v4/leads/${leadId}`
   const requestBody = { custom_fields_values: customFieldsValues }
+  logger.info(JSON.stringify(requestBody), "requestBody")
 
   try {
     // Log de petición saliente

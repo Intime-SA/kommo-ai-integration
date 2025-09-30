@@ -128,6 +128,7 @@ export interface SettingsDocument {
   createdAt?: string;
   updatedAt?: string;
   accountName: string;
+  walink?: string;
 }
 
 // Interface para documentos de status
@@ -1885,6 +1886,7 @@ export class KommoDatabaseService {
       createdAt: setting.createdAt,
       updatedAt: setting.updatedAt,
       accountName: setting.accountName,
+      walink: setting.walink,
     })) as SettingsDocument[];
   }
 
