@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStatusById, updateStatusById, deleteStatusById, StatusDocument } from '../../../../lib/mongodb-services';
+import { getStatusById, updateStatusById, deleteStatusById } from '../../../../lib/mongodb-services';
+import { StatusDocument } from '@/types/kommo';
 
 // GET - Obtener un documento de status específico por ID
 export async function GET(
