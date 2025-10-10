@@ -36,6 +36,8 @@ export class KommoDatabaseService {
 
   private async getCollection(collectionName: string) {
     const client = await this.getClient();
+    console.log(`🗄️ Usando base de datos: ${MONGO_CONFIG.database}`);
+    console.log(`📋 Usando colección: ${collectionName}`);
     const db = client.db(MONGO_CONFIG.database);
     return db.collection(collectionName);
   }
@@ -1670,20 +1672,31 @@ export class KommoDatabaseService {
    * Obtener un documento de settings por ID
    */
   async getSettingsById(id: string): Promise<SettingsDocument | null> {
-    const collection = await this.getCollection("settings");
-    const setting = await collection.findOne({ _id: new ObjectId(id) });
+    console.log(`🔍 [MongoDB] Buscando en colección 'settings' con ID: ${id}`);
 
-    if (!setting) return null;
+    try {
+      const collection = await this.getCollection("settings");
+      console.log(`📁 Colección obtenida: settings`);
 
-    return {
-      _id: setting._id.toString(),
-      accountCBU: setting.accountCBU,
-      context: setting.context,
-      message: setting.message,
-      createdAt: setting.createdAt,
-      updatedAt: setting.updatedAt,
-      accountName: setting.accountName,
-    } as SettingsDocument;
+      const setting = await collection.findOne({ _id: new ObjectId(id) });
+      console.log(`📊 Documento encontrado:`, setting ? 'Sí' : 'No');
+
+      if (!setting) return null;
+
+      return {
+        _id: setting._id.toString(),
+        accountCBU: setting.accountCBU,
+        context: setting.context,
+        message: setting.message,
+        createdAt: setting.createdAt,
+        updatedAt: setting.updatedAt,
+        accountName: setting.accountName,
+      } as SettingsDocument;
+
+    } catch (error) {
+      console.error(`❌ Error en getSettingsById:`, error);
+      throw error;
+    }
   }
 
   /**

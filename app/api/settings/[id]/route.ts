@@ -21,7 +21,11 @@ export async function GET(
       );
     }
 
+    console.log(`🔍 Buscando setting con ID: ${id}`);
+
     const setting = await getSettingsById(id);
+
+    console.log(`📊 Resultado de búsqueda:`, setting ? 'Encontrado' : 'No encontrado');
 
     if (!setting) {
       return NextResponse.json(
