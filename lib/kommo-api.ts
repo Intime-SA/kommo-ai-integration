@@ -1,6 +1,8 @@
 // Utility functions for interacting with Kommo API
 // You'll need to implement these based on your Kommo API credentials
 
+import { STATUS_MAPPING } from "./constants"
+import { KOMMO_CONFIG, USER_REGISTRATION_CONFIG } from "./kommo-config"
 import {
   logLeadInfoSuccess,
   logKommoApiError,
@@ -11,12 +13,13 @@ import {
   logHttpError,
   logger
 } from "./logger"
+import { getStatusName } from "./utils"
 
 export interface KommoApiConfig {
   subdomain: string
 }
 
-const ACCESS_TOKEN = process.env.KOMMO_ACCESS_TOKEN
+const ACCESS_TOKEN = KOMMO_CONFIG.accessToken
 
 export async function updateLeadStatus(leadId: string, newStatusId: string, config: KommoApiConfig): Promise<boolean> {
   const startTime = Date.now()
@@ -174,7 +177,6 @@ export async function getLeadInfo(leadId: string, config: KommoApiConfig): Promi
     const result = JSON.parse(responseText)
     return result
   } catch (error) {
-    const responseTime = Date.now() - startTime
     logHttpError("getLeadInfo", error, url)
     logKommoApiError("getLeadInfo", error)
     return null
@@ -217,49 +219,9 @@ export async function getContactInfo(contactId: string, config: KommoApiConfig):
   }
 }
 
-// Pipeline configuration
-export const PIPELINE_CONFIG = {
-  id: "11862040",
-  name: "Embudo de ventas",
-} as const
 
-// Status ID mapping - configured based on your Kommo pipeline
-export const STATUS_MAPPING = {
-  Revisar: "91366623",
-  PidioUsuario: "91366607",
-  PidioCbuAlias: "91366611",
-  Cargo: "91366615",
-  NoCargo: "91366627",
-  NoAtender: "91366619",
-  Seguimiento: "91366631",
-  Ganado: "142",
-  Perdido: "143",
-} as const
 
-// Helper function to get status ID by name
-export function getStatusId(statusName: keyof typeof STATUS_MAPPING): string {
-  return STATUS_MAPPING[statusName]
-}
 
-// Helper function to update lead status by name
-export async function updateLeadStatusByName(
-  leadId: string,
-  statusName: keyof typeof STATUS_MAPPING,
-  config: KommoApiConfig
-): Promise<boolean> {
-  const statusId = getStatusId(statusName)
-  return updateLeadStatus(leadId, statusId, config)
-}
-
-// Helper function to get status name by ID
-export function getStatusName(statusId: string): keyof typeof STATUS_MAPPING | null {
-  for (const [name, id] of Object.entries(STATUS_MAPPING)) {
-    if (id === statusId) {
-      return name as keyof typeof STATUS_MAPPING
-    }
-  }
-  return null
-}
 
 // Function to get current lead status
 export async function getCurrentLeadStatus(leadId: string, config: KommoApiConfig): Promise<keyof typeof STATUS_MAPPING | null> {
@@ -276,7 +238,7 @@ export async function getCurrentLeadStatus(leadId: string, config: KommoApiConfi
 
     return statusName
   } catch (error) {
-    logKommoApiError("getCurrentLeadStatus", error, leadId)
+    logKommoApiError("getCurrentLeadStatus()", error, leadId)
     return null
   }
 }
@@ -301,15 +263,22 @@ export function generateUsername(contactName: string, contactId: number): string
 }
 
 // Register user in external API
-export async function registerUser(username: string, parentId: string = "23532"): Promise<any> {
+export async function registerUser(username: string, platform: string, parentId?: string): Promise<any> {
   const startTime = Date.now()
-  const url = process.env.USER_REGISTRATION_API_URL || "https://greenbet.uno/api/create-user" // TODO: Add to env vars
+
+  // Find the platform configuration
+  const platformConfig = USER_REGISTRATION_CONFIG.platform.find(p => p.name === platform)
+  if (!platformConfig) {
+    throw new Error(`Platform '${platform}' not found in configuration`)
+  }
+
+  const url = platformConfig.apiUrl || ""
 
   const requestBody = {
-    parent_id: parentId,
+    parent_id: platformConfig.parentId || parentId,
     username: username,
     password: "123456",
-    token: "URC5zzGintYpRsxwn6cprQfnYeLiUbR/GIiwKa38NxU"
+    token: platformConfig.token,
   }
 
   try {
@@ -332,27 +301,28 @@ export async function registerUser(username: string, parentId: string = "23532")
     // Log de respuesta
     logIncomingHttpResponse(response.status, response.statusText, responseText, responseTime)
 
+    // If the response is not ok, throw an error
     if (!response.ok) {
       throw new Error(`Failed to register user: ${response.status} ${response.statusText} - ${responseText}`)
     }
 
+    // Parse the response
     const result = JSON.parse(responseText)
     return result
   } catch (error) {
-    const responseTime = Date.now() - startTime
     logHttpError("registerUser", error, url)
     throw error
   }
 }
 
 // Function to register user with retry logic
-export async function registerUserWithRetry(baseUsername: string, maxRetries: number = 2): Promise<any> {
+export async function registerUserWithRetry(baseUsername: string, maxRetries: number = 2, platform: string = 'greenBet'): Promise<any> {
   let currentUsername = baseUsername;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`🔐 Attempting user registration (attempt ${attempt + 1}/${maxRetries + 1}) with username: ${currentUsername}`);
-      const result = await registerUser(currentUsername);
+      console.log(`🔐 Attempting user registration (attempt ${attempt + 1}/${maxRetries + 1}) with username: ${currentUsername} for platform: ${platform}`);
+      const result = await registerUser(currentUsername, platform);
       console.log(`✅ User registration successful on attempt ${attempt + 1} with username: ${currentUsername}`);
       return result;
     } catch (error) {
@@ -382,12 +352,10 @@ export async function registerUserWithRetry(baseUsername: string, maxRetries: nu
 }
 
 // Complete user creation process
-export async function createUserFromLead(leadId: string, config: KommoApiConfig): Promise<any> {
+export async function createUserFromLead(leadId: string, config: KommoApiConfig, platform: 'greenBet' | 'moneyMaker' ): Promise<any> {
   try {
-    console.log(`🚀 Starting user creation process for lead ${leadId}`)
 
     // 1. Get lead information
-    console.log(`📋 Getting lead info for lead ${leadId}`)
     const leadInfo = await getLeadInfo(leadId, config)
     if (!leadInfo) {
       throw new Error(`Could not get lead info for lead ${leadId}`)
@@ -399,13 +367,11 @@ export async function createUserFromLead(leadId: string, config: KommoApiConfig)
       throw new Error(`No contacts found for lead ${leadId}`)
     }
 
+    // 2. Get main contact
     const mainContact = contacts.find((contact: any) => contact.is_main) || contacts[0]
     const contactId = mainContact.id
 
-    console.log(`👤 Found contact ID: ${contactId}`)
-
     // 3. Get contact information
-    console.log(`📞 Getting contact info for contact ${contactId}`)
     const contactInfo = await getContactInfo(contactId.toString(), config)
     if (!contactInfo) {
       throw new Error(`Could not get contact info for contact ${contactId}`)
@@ -416,8 +382,8 @@ export async function createUserFromLead(leadId: string, config: KommoApiConfig)
     console.log(`👤 Generated username: ${username}`)
 
     // 5. Register user in external API with retry logic
-    console.log(`🔐 Registering user ${username} with retry logic`)
-    const registrationResult = await registerUserWithRetry(username, 2)
+    console.log(`🔐 Registering user ${username} with retry logic for platform: ${platform}`)
+    const registrationResult = await registerUserWithRetry(username, 2, platform)
 
     console.log(`✅ User creation completed successfully for lead ${leadId}`)
     return {

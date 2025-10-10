@@ -1,7 +1,7 @@
+import { KOMMO_CONFIG } from '@/lib/kommo-config';
 import { NextRequest, NextResponse } from 'next/server';
 
-const ACCESS_TOKEN = process.env.KOMMO_ACCESS_TOKEN;
-const KOMMO_SUBDOMAIN = process.env.KOMMO_SUBDOMAIN;
+
 
 // Interface para la respuesta filtrada de status
 interface FilteredStatus {
@@ -13,6 +13,7 @@ interface FilteredStatus {
 
 export async function GET(request: NextRequest) {
   try {
+
     // Obtener el pipeline_id de los parámetros de query
     const { searchParams } = new URL(request.url);
     const pipelineId = searchParams.get('pipeline_id');
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Validar que ACCESS_TOKEN esté configurado
-    if (!ACCESS_TOKEN) {
+    if (!KOMMO_CONFIG.accessToken) {
       return NextResponse.json(
         {
           success: false,
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Validar que KOMMO_SUBDOMAIN esté configurado
-    if (!KOMMO_SUBDOMAIN) {
+    if (!KOMMO_CONFIG.subdomain) {
       return NextResponse.json(
         {
           success: false,
@@ -54,15 +55,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Construir la URL de la API de Kommo
-    const url = `https://${KOMMO_SUBDOMAIN}.kommo.com/api/v4/leads/pipelines/${pipelineId}`;
-
-    console.log(`📤 Consultando pipeline ${pipelineId} en Kommo API:`, url);
+    const url = `https://${KOMMO_CONFIG.subdomain}.kommo.com/api/v4/leads/pipelines/${pipelineId}`;
 
     // Hacer la petición a la API de Kommo
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${KOMMO_CONFIG.accessToken}`,
         'Content-Type': 'application/json',
       },
     });
@@ -70,7 +69,6 @@ export async function GET(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`❌ Error en API de Kommo: ${response.status} ${response.statusText}`, errorText);
-
       return NextResponse.json(
         {
           success: false,
@@ -83,7 +81,6 @@ export async function GET(request: NextRequest) {
     }
 
     const kommoResponse = await response.json();
-    console.log('✅ Respuesta de Kommo API:', JSON.stringify(kommoResponse, null, 2));
 
     // Verificar que la respuesta tenga la estructura esperada
     if (!kommoResponse._embedded || !kommoResponse._embedded.statuses) {
@@ -104,8 +101,6 @@ export async function GET(request: NextRequest) {
       color: status.color,
       pipeline_id: status.pipeline_id
     }));
-
-    console.log(`✅ Filtrados ${filteredStatuses.length} statuses del pipeline ${pipelineId}`);
 
     return NextResponse.json({
       success: true,

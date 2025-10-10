@@ -7,246 +7,13 @@ import {
   logWelcomeBotError,
   logger,
 } from "./logger";
+import { META_CONFIG, MONGO_CONFIG } from "./kommo-config";
+import { BotActionLog, ChangeStatusLog, LogEntry, LogsQueryParams, LogsResponse, ReceivedMessageLog, RuleDocument, RulesQueryParams, RulesResponse, SendMetaLog, UserDocument, LeadDocument, TaskDocument, MessageDocument, BotActionDocument, TokenVisitDocument, ContactContext, StatusDocument, SettingsDocument } from "@/types/kommo";
+import { convertToArgentinaISO, convertToUTC, getCurrentArgentinaISO, getCurrentDate, getDateHoursAgo } from "./utils";
 
-// Función helper para obtener fecha hace N horas
-function getDateHoursAgo(hours: number): string {
-  const date = new Date();
-  date.setHours(date.getHours() - hours);
-  return date.toISOString();
-}
 
-// Función helper para obtener fecha actual
-function getCurrentDate(): string {
-  return new Date().toISOString();
-}
-
-// Tipos para las colecciones MongoDB
-
-export interface UserDocument {
-  _id?: string;
-  clientId: string; // client.id del payload
-  name: string; // client.name
-  contactId: string;
-  phone?: string; // Teléfono extraído de custom_fields
-  source: string;
-  sourceUid: string;
-  sourceName: string;
-  messageText: string;
-  createdAt: string; // ISO string en horario Argentina
-  updatedAt: string; // ISO string en horario Argentina
-}
-
-export interface LeadDocument {
-  _id?: string;
-  uid: string;
-  source: string;
-  sourceUid: string;
-  category: string;
-  leadId: string;
-  contactId: string;
-  pipelineId: string;
-  createdAt: string; // ISO string en horario Argentina
-  client: {
-    name: string;
-    id: string;
-  };
-  messageText: string;
-  sourceName: string;
-  updatedAt: string; // ISO string en horario Argentina
-}
-
-export interface TaskDocument {
-  _id?: string;
-  talkId: string;
-  contactId: string;
-  chatId: string;
-  entityId: string;
-  entityType: string;
-  origin: string;
-  isInWork: boolean;
-  isRead: boolean;
-  createdAt: string; // ISO string en horario Argentina
-  updatedAt: string; // ISO string en horario Argentina
-}
-
-export interface MessageDocument {
-  _id?: string;
-  id: string; // ID del mensaje de Kommo
-  chatId: string;
-  talkId: string;
-  contactId: string;
-  text: string;
-  createdAt: string; // ISO string en horario Argentina
-  elementType: string;
-  entityType: string;
-  elementId: string;
-  entityId: string;
-  type: "incoming" | "outgoing";
-  author: {
-    id: string;
-    type: string;
-    name: string;
-  };
-  attachment?: {
-    type: string;
-    link: string;
-    file_name: string;
-  };
-  updatedAt: string; // ISO string en horario Argentina
-}
-
-export interface BotActionDocument {
-  _id?: string;
-  talkId: string;
-  entityId: string;
-  contactId: string;
-  messageText: string;
-  messageCreatedAt: string; // ISO string en horario Argentina
-  aiDecision: {
-    currentStatus: string;
-    newStatus: string;
-    shouldChange: boolean;
-    reasoning: string;
-    confidence: number;
-  };
-  statusUpdateResult: {
-    success: boolean;
-    error?: string;
-  };
-  processingTimestamp: string; // ISO string en horario Argentina
-  createdAt: string; // ISO string en horario Argentina
-}
-
-export interface TokenVisitDocument {
-  _id?: string;
-  token: string;
-  lead: any; // El objeto lead que viene del payload
-  createdAt: string; // ISO string en horario Argentina
-}
-
-// Interface para documentos de settings
-export interface SettingsDocument {
-  _id?: string;
-  accountCBU: string;
-  context: string;
-  message: string;
-  createdAt?: string;
-  updatedAt?: string;
-  accountName: string;
-  walink?: string;
-}
-
-// Interface para documentos de status
-export interface StatusDocument {
-  _id?: string;
-  statusId: string;
-  name: string;
-  description: string;
-  kommo_id: string | null;
-  color?: string; // Color en formato hex (opcional)
-  createdAt: string;
-  updatedAt: string;
-}
-
-// Interfaz para el contexto histórico de un contacto
-export interface ContactContext {
-  contactId: string;
-  userInfo?: {
-    name: string;
-    clientId: string;
-    source: string;
-    sourceName: string;
-    firstMessage: string;
-    firstMessageDate: string;
-  };
-  activeLeads: Array<{
-    leadId: string;
-    status?: string;
-    createdAt: string;
-    lastActivity?: string;
-  }>;
-  recentMessages: Array<{
-    text: string;
-    type: "incoming" | "outgoing";
-    createdAt: string;
-    authorName: string;
-  }>;
-  activeTasks: Array<{
-    talkId: string;
-    isInWork: boolean;
-    isRead: boolean;
-    createdAt: string;
-    lastActivity?: string;
-  }>;
-  botActions: Array<{
-    messageText: string;
-    aiDecision: {
-      currentStatus: string;
-      newStatus: string;
-      shouldChange: boolean;
-      reasoning: string;
-      confidence: number;
-    };
-    statusUpdateResult: {
-      success: boolean;
-      error?: string;
-    };
-    processingTimestamp: string;
-  }>;
-  summary: {
-    totalMessages: number;
-    lastActivity: string;
-    currentStatus?: string;
-    conversationDuration: string;
-  };
-}
-
-// Utilidad para convertir fechas al formato ISO string en horario Argentina
-export function convertToArgentinaISO(ts: string | number): string {
-  // Convertir a número si viene como string
-  const timestamp = typeof ts === "string" ? Number(ts) : ts;
-
-  // Timestamp en segundos (como viene de la API de Kommo)
-  const dUTC = new Date(timestamp * 1000);
-
-  // Obtener la diferencia horaria con Argentina (en minutos)
-  const argentinaOffset = dUTC.toLocaleString("en", {
-    timeZone: "America/Argentina/Buenos_Aires",
-  });
-  const utcOffset = dUTC.toLocaleString("en", { timeZone: "UTC" });
-
-  // Crear fecha ajustada restando el offset de Argentina
-  const dAR = new Date(dUTC.getTime() - 3 * 60 * 60 * 1000); // Restar 3 horas
-
-  return dAR.toISOString();
-}
-
-// Función helper para obtener la fecha actual en Argentina ISO
-export function getCurrentArgentinaISO(): string {
-  const now = new Date();
-
-  // Crear fecha ajustada restando 3 horas (Argentina offset)
-  const dAR = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-
-  return dAR.toISOString();
-}
-
-// Función helper para convertir una fecha ISO a zona horaria de Argentina
-export function convertToArgentinaTime(dateString: string): Date {
-  const date = new Date(dateString);
-  // Si la fecha ya está en zona Argentina (como los datos almacenados),
-  // devolverla tal cual. Si viene del frontend, asumir que está en UTC y convertir.
-  // Para consultas, asumir que las fechas del frontend están en zona local/UTC
-  // y convertirlas a zona Argentina para comparar con los datos almacenados.
-
-  // Los datos se almacenan como: new Date().toISOString() pero restando 3 horas
-  // Para consultas, si el usuario envía "2025-09-12T15:18:00.000Z",
-  // necesitamos convertirlo a zona Argentina: restar 3 horas
-  return new Date(date.getTime() - 3 * 60 * 60 * 1000);
-}
 
 // Servicios para interactuar con MongoDB
-
 export class KommoDatabaseService {
   private static instance: KommoDatabaseService;
   private client: MongoClient | null = null;
@@ -1514,7 +1281,7 @@ export class KommoDatabaseService {
     contactId: string,
     messageText: string
   ): Promise<boolean> {
-    const collection = await this.getCollection("bot_actions");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
 
     // Calcular la fecha límite (30 minutos atrás)
     const thirtyMinutesAgo = new Date();
@@ -1528,7 +1295,6 @@ export class KommoDatabaseService {
       messageText: messageText,
       createdAt: { $gte: thirtyMinutesAgo.toISOString() },
     });
-
     return existingBotAction !== null;
   }
 
@@ -1559,17 +1325,15 @@ export class KommoDatabaseService {
       );
 
       if (messageAlreadyProcessed) {
-        // Obtener información del procesamiento anterior
-/*         const thirtyMinutesAgo = new Date();
-        thirtyMinutesAgo.setMinutes(thirtyMinutesAgo.getMinutes() - 30); */
-
-        const botActionsCollection = await this.getCollection("bot_actions");
+        const botActionsCollection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
         const existingAction = await botActionsCollection.findOne({
           talkId: talkId,
           entityId: entityId,
           contactId: contactId,
           messageText: messageText,
         });
+
+        logger.info('Mensaje ya procesado por IA en los últimos 30 minutos', existingAction);
 
         return {
           shouldProcess: false,
@@ -1646,7 +1410,7 @@ export class KommoDatabaseService {
 
   // Helper: Obtener cambios de status recientes para un lead
   private async getRecentStatusChanges(entityId: string, minutesAgo: number = 10) {
-    const collection = await this.getCollection("bot_actions");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
 
     const timeAgo = new Date();
     timeAgo.setMinutes(timeAgo.getMinutes() - minutesAgo);
@@ -1666,7 +1430,7 @@ export class KommoDatabaseService {
 
   // Helper: Obtener mensajes recientes de un contacto
   private async getRecentMessagesFromContact(contactId: string, minutesAgo: number = 5) {
-    const collection = await this.getCollection("messages");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.messages || "");
 
     const timeAgo = new Date();
     timeAgo.setMinutes(timeAgo.getMinutes() - minutesAgo);
@@ -1688,7 +1452,7 @@ export class KommoDatabaseService {
     extractedCode: string,
     eventName: string
   ): Promise<boolean> {
-    const collection = await this.getCollection("send_meta");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.sendMeta || "");
 
     // Calcular la fecha límite (30 minutos atrás)
     const thirtyMinutesAgo = new Date();
@@ -1729,7 +1493,7 @@ export class KommoDatabaseService {
   async createStatus(
     data: Omit<StatusDocument, "_id" | "createdAt" | "updatedAt" | "kommo_id">
   ): Promise<StatusDocument> {
-    const collection = await this.getCollection("status");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
 
     // Verificar si ya existe un status con este statusId
     const existingStatus = await collection.findOne({
@@ -1765,7 +1529,7 @@ export class KommoDatabaseService {
    * Obtener todos los documentos de status
    */
   async getAllStatus(): Promise<StatusDocument[]> {
-    const collection = await this.getCollection("status");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
     const status = await collection.find({}).sort({ createdAt: -1 }).toArray();
 
     return status.map((status) => ({
@@ -1784,7 +1548,7 @@ export class KommoDatabaseService {
    * Obtener un documento de status por ID
    */
   async getStatusById(id: string): Promise<StatusDocument | null> {
-    const collection = await this.getCollection("status");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
     const status = await collection.findOne({ _id: new ObjectId(id) });
 
     if (!status) return null;
@@ -1805,7 +1569,7 @@ export class KommoDatabaseService {
    * Obtener un documento de status por statusId
    */
   async getStatusByStatusId(statusId: string): Promise<StatusDocument | null> {
-    const collection = await this.getCollection("status");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
     const status = await collection.findOne({ statusId });
 
     if (!status) return null;
@@ -1829,7 +1593,7 @@ export class KommoDatabaseService {
     id: string,
     updateData: Partial<Omit<StatusDocument, "_id" | "createdAt">>
   ): Promise<StatusDocument | null> {
-    const collection = await this.getCollection("status");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
 
     // Validar color si está presente en los datos de actualización
     if (updateData.color && !this.isValidHexColor(updateData.color)) {
@@ -2029,43 +1793,6 @@ export const isConversionAlreadySent = (
   eventName: string
 ) => kommoDatabaseService.isConversionAlreadySent(extractedCode, eventName);
 
-// Función helper para convertir fecha a UTC (restando 3 horas para Argentina)
-function convertToUTC(date: Date): Date {
-  return new Date(date.getTime() - 3 * 60 * 60 * 1000);
-}
-
-// Función utilitaria para extraer código de un mensaje
-export function extractCodeFromMessage(messageText: string): string | null {
-  console.log("Extrayendo código de mensaje:", messageText);
-  // Patrón para buscar códigos generados por nanoid (incluyen guiones y caracteres especiales)
-  // Busca patrones como "Descuento: Nv5M-ilY.", "Código: AbCdEfGh-" o "Promocion: oowMSNzI."
-  const codePattern =
-    /(?:descuento|codigo|código|token|promocion|promoción)\s*:\s*([A-Za-z0-9_-]{1,21})\.?/i;
-  const match = messageText.match(codePattern);
-  console.log("Match del patrón principal:", match);
-  if (match && match[1]) {
-    return match[1];
-  }
-
-  // También buscar códigos sueltos generados por nanoid
-  // nanoid por defecto genera 21 caracteres, pero podemos buscar patrones más cortos también
-  const looseCodePatterns = [
-    /\b([A-Za-z0-9_-]{8,21})\b/, // Códigos de 8-21 caracteres con guiones
-    /\b([A-Za-z0-9_-]{1,21})\b/, // Códigos de 1-21 caracteres con guiones
-  ];
-
-  for (const pattern of looseCodePatterns) {
-    const looseMatch = messageText.match(pattern);
-    console.log("Match del patrón suelto:", looseMatch);
-    if (looseMatch && looseMatch[1]) {
-      return looseMatch[1];
-    }
-  }
-
-  return null;
-}
-
-// Función de prueba para verificar la detección de códigos
 
 // Función para enviar conversión a Meta API
 export async function sendConversionToMeta(
@@ -2075,10 +1802,10 @@ export async function sendConversionToMeta(
 ) {
   try {
     // Determinar el tipo de evento (ConversacionCRM1 por defecto, o el especificado)
-    const eventName = leadData.eventName || "ConversacionCRM1";
+    const eventName = leadData.eventName;
 
     // Usar el pixel ID correcto
-    const pixel = pixelId || process.env.NEXT_PUBLIC_META_PIXEL_ID;
+    const pixel = pixelId || META_CONFIG.pixelId;
 
     const conversionData = {
       data: [
@@ -2100,9 +1827,6 @@ export async function sendConversionToMeta(
       ],
     };
 
-    console.log(`Conversion data para ${eventName}:`, conversionData);
-    console.log("Conversion data.user_data:", conversionData.data[0].user_data);
-
     // VERIFICAR EN BASE DE DATOS ANTES DE ENVIAR
     // Necesitamos el código para verificar duplicados
     const extractedCode = leadData.extractedCode;
@@ -2112,8 +1836,8 @@ export async function sendConversionToMeta(
       );
 
       const client = await clientPromise;
-      const db = client.db(process.env.MONGODB_DATABASE || "kommo");
-      const collection = db.collection("send_meta");
+      const db = client.db(MONGO_CONFIG.database || "");
+      const collection = db.collection(MONGO_CONFIG.collection.sendMeta || "");
 
       // Buscar si ya existe una conversión enviada para este código y tipo de evento
       const existingConversion = await collection.findOne({
@@ -2183,9 +1907,10 @@ export async function saveSendMetaRecord(
   conversionResults: any[]
 ) {
   try {
+
     const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
-    const collection = db.collection("send_meta");
+    const db = client.db(MONGO_CONFIG.database || "");
+    const collection = db.collection(MONGO_CONFIG.collection.sendMeta || "");
 
     // Crear timestamp en UTC
     const utcTimestamp = convertToUTC(new Date());
@@ -2197,10 +1922,6 @@ export async function saveSendMetaRecord(
 
     if (existingRecord) {
       // Si existe, hacer push/update del array existente
-      console.log(
-        `🔄 Actualizando registro existente para código: ${extractedCode}`
-      );
-
       // Combinar los arrays existentes con los nuevos
       const updatedConversionData = [...(existingRecord.conversionData || [])];
       const updatedConversionResults = [
@@ -2214,12 +1935,14 @@ export async function saveSendMetaRecord(
         }
       });
 
+      // Actualizar los resultados de la conversión
       conversionResults.forEach((result, index) => {
         if (result !== null) {
           updatedConversionResults[index] = result;
         }
       });
 
+      // Actualizar el registro
       const updateData = {
         conversionData: updatedConversionData,
         conversionResults: updatedConversionResults,
@@ -2227,7 +1950,6 @@ export async function saveSendMetaRecord(
         success: updatedConversionResults.some(
           (result) => result && result.success
         ),
-        // Actualizar messageData si viene de un evento diferente
         ...(messageData && {
           messageData: {
             id: messageData.id,
@@ -2251,18 +1973,20 @@ export async function saveSendMetaRecord(
         { $set: updateData }
       );
 
-      console.log("✅ Registro actualizado en send_meta:", existingRecord._id);
+      logger.info(`✅ Registro actualizado en send_meta: ${result}`);
+
 
       // Actualizar el lead correspondiente con meta_data actualizada
       if (messageData?.entityId || existingRecord.messageData?.entityId) {
         const entityId =
           messageData?.entityId || existingRecord.messageData?.entityId;
-        const leadsCollection = db.collection("leads");
+        const leadsCollection = db.collection(MONGO_CONFIG.collection.leads || "");
 
         // Obtener el registro actualizado para guardar en meta_data
         const updatedRecord = await collection.findOne({
           extractedCode: extractedCode,
         });
+
 
         const updateResult = await leadsCollection.updateOne(
           { leadId: entityId },
@@ -2274,23 +1998,14 @@ export async function saveSendMetaRecord(
           }
         );
 
-        if (updateResult.matchedCount > 0) {
-          console.log(
-            `✅ Lead actualizado con meta_data para entityId: ${entityId}`
-          );
-        } else {
-          console.log(`⚠️ No se encontró lead con entityId: ${entityId}`);
-        }
-      }
+        logger.info(`✅ Update result: ${updateResult}`);
 
+      }
       return { success: true, updatedId: existingRecord._id };
     } else {
       // Si no existe, crear nuevo registro
       const record = {
-        // Array de datos de conversiones enviadas a Meta
-        // [0] = ConversacionCRM1, [1] = CargoCRM1
         conversionData: conversionDataArray,
-        // Datos del mensaje que disparó la conversión
         messageData: {
           id: messageData.id,
           chatId: messageData.chat_id || messageData.chatId,
@@ -2305,7 +2020,6 @@ export async function saveSendMetaRecord(
           type: messageData.type,
           author: messageData.author,
         },
-        // Información adicional
         extractedCode: extractedCode,
         conversionResults: conversionResults,
         timestamp: utcTimestamp,
@@ -2313,11 +2027,10 @@ export async function saveSendMetaRecord(
       };
 
       const result = await collection.insertOne(record);
-      console.log("✅ Registro creado en send_meta:", result.insertedId);
 
       // Actualizar el lead correspondiente agregando meta_data
       if (record.messageData.entityId) {
-        const leadsCollection = db.collection("leads");
+        const leadsCollection = db.collection(MONGO_CONFIG.collection.leads || "");
         const updateResult = await leadsCollection.updateOne(
           { leadId: record.messageData.entityId },
           {
@@ -2325,20 +2038,10 @@ export async function saveSendMetaRecord(
               meta_data: record,
               updatedAt: utcTimestamp,
             },
-          }
+          }   
         );
-
-        if (updateResult.matchedCount > 0) {
-          console.log(
-            `✅ Lead actualizado con meta_data para entityId: ${record.messageData.entityId}`
-          );
-        } else {
-          console.log(
-            `⚠️ No se encontró lead con entityId: ${record.messageData.entityId}`
-          );
-        }
+        logger.info(`✅ Update result: ${updateResult}`);
       }
-
       return { success: true, insertedId: result.insertedId };
     }
   } catch (error) {
@@ -2354,8 +2057,8 @@ export async function saveSendMetaRecord(
 export async function findLeadById(leadId: string) {
   try {
     const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
-    const collection = db.collection("leads");
+    const db = client.db(MONGO_CONFIG.database || "");
+    const collection = db.collection(MONGO_CONFIG.collection.leads || "");
 
     const lead = await collection.findOne({ leadId: leadId });
     return lead;
@@ -2368,8 +2071,8 @@ export async function findLeadById(leadId: string) {
 export async function findContactById(contactId: string) {
   try {
     const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
-    const collection = db.collection("users");
+    const db = client.db(MONGO_CONFIG.database || "");
+    const collection = db.collection(MONGO_CONFIG.collection.users || "");
 
     const contact = await collection.findOne({ contactId: contactId });
     return contact;
@@ -2383,12 +2086,13 @@ export async function findContactById(contactId: string) {
 export async function findSendMetaByLeadId(leadId: string) {
   try {
     const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
-    const collection = db.collection("send_meta");
+    const db = client.db(MONGO_CONFIG.database || "");
+    const collection = db.collection(MONGO_CONFIG.collection.sendMeta || "");
 
     const record = await collection.findOne({
       "messageData.entityId": leadId
     });
+
     return record;
   } catch (error) {
     console.error("❌ Error al buscar registro en send_meta por leadId:", error);
@@ -2403,9 +2107,8 @@ export async function createLeadFromKommoApi(
 ) {
   try {
     const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
-    const collection = db.collection("leads");
-
+    const db = client.db(MONGO_CONFIG.database || "");
+    const collection = db.collection(MONGO_CONFIG.collection.leads || "");
     const leadId = kommoLeadData.id.toString();
 
     // Verificar si ya existe un lead con este leadId
@@ -2445,7 +2148,7 @@ export async function createLeadFromKommoApi(
 
     const { _id, ...leadData } = leadDocument;
     const result = await collection.insertOne(leadData);
-    console.log("✅ Lead creado desde API de Kommo:", result.insertedId);
+    logger.info(`✅ Lead creado desde API de Kommo: ${result.insertedId}`);
     return leadDocument;
   } catch (error) {
     console.error("❌ Error al crear lead desde API de Kommo:", error);
@@ -2457,8 +2160,8 @@ export async function createLeadFromKommoApi(
 export async function createContactFromKommoApi(kommoContactData: any) {
   try {
     const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DATABASE || "kommo");
-    const collection = db.collection("users");
+    const db = client.db(MONGO_CONFIG.database || "");
+    const collection = db.collection(MONGO_CONFIG.collection.users || "");
 
     // Extraer teléfono del campo personalizado PHONE
     let phone = "";
@@ -2558,189 +2261,13 @@ export const getSendMetaLogs = (params: LogsQueryParams) =>
 export const getConsolidatedLogs = (params: LogsQueryParams) =>
   kommoDatabaseService.getConsolidatedLogs(params);
 
-// ===== TIPOS PARA LOGS CONSOLIDADOS =====
 
-export type LogType =
-  | "received_messages"
-  | "change_status"
-  | "bot_actions"
-  | "send_meta";
-
-export interface BaseLogEntry {
-  index: number;
-  id: string;
-  timestamp: string;
-  type: LogType;
-  contactId: string;
-  leadId?: string;
-  talkId?: string;
-  userName: string;
-  clientId: string;
-  sourceName: string;
-}
-
-export interface ReceivedMessageLog extends BaseLogEntry {
-  type: "received_messages";
-  messageText: string;
-  messageType: "incoming" | "outgoing";
-  authorName: string;
-  messageId: string;
-  chatId: string;
-}
-
-export interface ChangeStatusLog extends BaseLogEntry {
-  type: "change_status";
-  oldStatus?: string;
-  newStatus: string;
-  changedBy: "bot" | "manual" | "system";
-  reason?: string;
-  confidence?: number;
-  success: boolean;
-}
-
-export interface BotActionLog extends BaseLogEntry {
-  type: "bot_actions";
-  messageText: string;
-  aiDecision: {
-    currentStatus: string;
-    newStatus: string;
-    shouldChange: boolean;
-    reasoning: string;
-    confidence: number;
-  };
-  statusUpdateResult: {
-    success: boolean;
-    error?: string;
-  };
-  processingTime: number; // en ms
-}
-
-export interface SendMetaLog extends BaseLogEntry {
-  type: "send_meta";
-  extractedCode: string;
-  conversionData: Array<{
-    data: Array<{
-      event_name: string;
-      event_time: number;
-      action_source: string;
-      event_source_url: string;
-      user_data: {
-        client_ip_address: string;
-        client_user_agent: string;
-        fbp: string;
-        fbc: string;
-      };
-    }>;
-  }>;
-  conversionResults: Array<{
-    success: boolean;
-    error?: string;
-    message?: string;
-    data?: any;
-  }>;
-  success: boolean;
-}
-
-export type LogEntry =
-  | ReceivedMessageLog
-  | ChangeStatusLog
-  | BotActionLog
-  | SendMetaLog;
-
-// Parámetros de consulta para logs
-export interface LogsQueryParams {
-  searchTerm?: string;
-  startDate?: string;
-  endDate?: string;
-  logType?: LogType;
-  contactId?: string;
-  leadId?: string;
-  talkId?: string;
-  userName?: string;
-  clientId?: string;
-  sourceName?: string;
-  status?: string;
-  changedBy?: "bot" | "manual" | "system";
-  limit?: number;
-  offset?: number;
-  sortBy?:
-    | "timestamp"
-    | "userName"
-    | "contactId"
-    | "type"
-    | "leadId"
-    | "extractedCode";
-  sortOrder?: "asc" | "desc";
-}
-
-// Respuesta del endpoint de logs
-export interface LogsResponse {
-  logs: LogEntry[];
-  total: number;
-  limit: number;
-  offset: number;
-  hasMore: boolean;
-  stats: {
-    received_messages: number;
-    change_status: number;
-    bot_actions: number;
-    send_meta: number;
-  };
-  query: LogsQueryParams;
-}
-
-// ===== INTERFACES PARA RULES =====
-
-// Interface para documentos de reglas
-export interface RuleDocument {
-  _id?: string | ObjectId;
-  createdAt: string; // ISO string en horario Argentina
-  updatedAt: string; // ISO string en horario Argentina
-  rule: string; // Número o identificador de la regla
-  text: string; // Texto descriptivo de la regla
-  crm: string; // Sistema CRM utilizado
-  pipeline: string; // Pipeline donde se aplica
-  priority: number; // Prioridad de la regla
-  status: "active" | "inactive" | "draft"; // Estado de la regla
-}
-
-// Parámetros de consulta para rules
-export interface RulesQueryParams {
-  startDate?: string;
-  endDate?: string;
-  rule?: string;
-  text?: string;
-  crm?: string;
-  pipeline?: string;
-  status?: "active" | "inactive" | "draft";
-  priority?: number;
-  limit?: number;
-  offset?: number;
-  sortBy?: "createdAt" | "updatedAt" | "rule" | "priority" | "status";
-  sortOrder?: "asc" | "desc";
-}
-
-// Respuesta del endpoint de rules
-export interface RulesResponse {
-  rules: RuleDocument[];
-  total: number;
-  limit: number;
-  offset: number;
-  hasMore: boolean;
-  query: RulesQueryParams;
-}
-
-// ===== FUNCIONES CRUD PARA RULES =====
-
-/**
- * Crear una nueva regla
- */
 export async function createRule(
   ruleData: Omit<RuleDocument, "_id" | "createdAt" | "updatedAt">
 ): Promise<RuleDocument> {
   const client = await clientPromise;
-  const db = client.db("kommo");
-  const collection = db.collection<RuleDocument>("rules");
+  const db = client.db(MONGO_CONFIG.database || "");
+  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
 
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
   const ruleDocument: Omit<RuleDocument, "_id"> = {
@@ -2763,7 +2290,7 @@ export async function getRules(
   params: RulesQueryParams = {}
 ): Promise<RulesResponse> {
   const client = await clientPromise;
-  const db = client.db("kommo");
+  const db = client.db(MONGO_CONFIG.database || "");
   const collection = db.collection<RuleDocument>("rules");
 
   // Construir query de filtrado
@@ -2818,8 +2345,8 @@ export async function getRules(
  */
 export async function getRuleById(id: string): Promise<RuleDocument | null> {
   const client = await clientPromise;
-  const db = client.db("kommo");
-  const collection = db.collection<RuleDocument>("rules");
+  const db = client.db(MONGO_CONFIG.database || "");
+  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
 
   try {
     const rule = await collection.findOne({ _id: new ObjectId(id) });
@@ -2836,8 +2363,8 @@ export async function getRuleByRuleNumber(
   ruleNumber: string
 ): Promise<RuleDocument | null> {
   const client = await clientPromise;
-  const db = client.db("kommo");
-  const collection = db.collection<RuleDocument>("rules");
+  const db = client.db(MONGO_CONFIG.database || "");
+  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
 
   return await collection.findOne({ rule: ruleNumber });
 }
@@ -2850,8 +2377,8 @@ export async function updateRule(
   updateData: Partial<Omit<RuleDocument, "_id" | "createdAt">>
 ): Promise<RuleDocument | null> {
   const client = await clientPromise;
-  const db = client.db("kommo");
-  const collection = db.collection<RuleDocument>("rules");
+  const db = client.db(MONGO_CONFIG.database || "");
+  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
 
   const updateDoc = {
     ...updateData,
@@ -2870,16 +2397,14 @@ export async function updateRule(
   }
 }
 
-/**
- * Actualizar una regla por número de regla
- */
+
 export async function updateRuleByRuleNumber(
   ruleNumber: string,
   updateData: Partial<Omit<RuleDocument, "_id" | "createdAt">>
 ): Promise<RuleDocument | null> {
   const client = await clientPromise;
-  const db = client.db("kommo");
-  const collection = db.collection<RuleDocument>("rules");
+  const db = client.db(MONGO_CONFIG.database || "");
+  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
 
   const updateDoc = {
     ...updateData,
@@ -2900,8 +2425,8 @@ export async function updateRuleByRuleNumber(
  */
 export async function deleteRule(id: string): Promise<boolean> {
   const client = await clientPromise;
-  const db = client.db("kommo");
-  const collection = db.collection<RuleDocument>("rules");
+  const db = client.db(MONGO_CONFIG.database || "");
+  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
 
   try {
     const result = await collection.deleteOne({ _id: new ObjectId(id) });
@@ -2918,8 +2443,8 @@ export async function deleteRuleByRuleNumber(
   ruleNumber: string
 ): Promise<boolean> {
   const client = await clientPromise;
-  const db = client.db("kommo");
-  const collection = db.collection<RuleDocument>("rules");
+  const db = client.db(MONGO_CONFIG.database || "");
+  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
 
   const result = await collection.deleteOne({ rule: ruleNumber });
   return result.deletedCount > 0;
@@ -2997,7 +2522,7 @@ export async function getActiveRulesForAI(
 export async function checkExistingProcessingTimestamp(processingTimestamp: string): Promise<boolean> {
   try {
     const db = await clientPromise;
-    const collection = db.db("kommo").collection<BotActionDocument>("bot_actions");
+    const collection = db.db(MONGO_CONFIG.database || "").collection<BotActionDocument>(MONGO_CONFIG.collection.botActions || "");
 
     // Convertir el timestamp a Date
     const targetTime = new Date(processingTimestamp);

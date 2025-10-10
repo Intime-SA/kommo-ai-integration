@@ -2,30 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLeadInfo, updateLeadCustomFields, type KommoApiConfig } from "@/lib/kommo-api";
 import { parseWebhookData } from "@/lib/webhook-utils";
 import { getAllSettings } from "@/lib/mongodb-services";
+import { KOMMO_CONFIG } from "@/lib/kommo-config";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   let leadId = 'unknown';
+  let leadName = 'unknown';
 
   try {
     // Parsear datos del webhook usando función unificada
-    const parsedData = await parseWebhookData(request);
-    leadId = parsedData.leadId;
+    const { leadId } = await parseWebhookData(request);
 
     // Configurar API de Kommo
     const config: KommoApiConfig = {
-      subdomain: process.env.KOMMO_SUBDOMAIN || "",
+      subdomain: KOMMO_CONFIG.subdomain || "",
     };
 
-    if (!config.subdomain) {
-      console.error('❌ KOMMO_SUBDOMAIN not configured');
-      return NextResponse.json({
-        error: 'Kommo subdomain not configured',
-        leadId
-      }, { status: 500 });
-    }
-
     // Obtener información del lead
-    console.log(`🔍 Getting lead info for lead ${leadId}`);
     const leadInfo = await getLeadInfo(leadId, config);
 
     if (!leadInfo) {
@@ -37,11 +30,9 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    const leadName = leadInfo.name;
-    console.log(`✅ Lead info obtained. Name: ${leadName}`);
+    leadName = leadInfo.name;
 
     // Obtener settings para el walink (phone)
-    console.log(`🔍 Getting settings for walink`);
     const settings = await getAllSettings();
 
     if (!settings || settings.length === 0) {
@@ -66,18 +57,16 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    console.log(`✅ Phone number obtained: ${phoneNumber}`);
-
     // Generar el mensaje de wa.link
     const message = `Solicito retiro mi nombre de usuario es: ${leadName}. Quiero retirar todo!`;
     const waLink = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
 
-    console.log(`🔗 Generated wa.link: ${waLink}`);
 
     // Actualizar el campo personalizado del lead (ID 977361)
     const customFieldsValues = [
       {
-        field_id: 977361,
+        name: KOMMO_CONFIG.customFields.tagWalink,
+        field_id: KOMMO_CONFIG.customFields.idWalink,
         values: [
           {
             value: waLink
@@ -86,7 +75,6 @@ export async function POST(request: NextRequest) {
       }
     ];
 
-    console.log(`🔄 Updating lead custom field 977361 with wa.link`);
     const updateSuccess = await updateLeadCustomFields(leadId, customFieldsValues, config);
 
     if (!updateSuccess) {
@@ -99,8 +87,6 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    console.log(`✅ Lead custom field updated successfully for lead ${leadId}`);
-
     // Devolver respuesta exitosa
     return NextResponse.json({
       success: true,
@@ -112,7 +98,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error(`❌ Error in retiro process for lead ${leadId}:`, error);
+    logger.error(`❌ Error in retiro process for lead ${leadId}:`, error);
 
     // Devolver respuesta de error con detalles
     return NextResponse.json({

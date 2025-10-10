@@ -1,50 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { findSendMetaByLeadId, sendConversionToMeta, saveSendMetaRecord } from "@/lib/mongodb-services"
+import { META_CONFIG } from "@/lib/kommo-config"
+import { parseWebhookData } from "@/lib/webhook-utils"
 
 async function handleWebhook(request: NextRequest) {
   try {
-    const body = await request.text()
-    console.log("📥 Webhook de conversión recibido:", body)
-
-    // Parsear form data (Kommo envía datos form-encoded)
-    const formData = new URLSearchParams(body)
-    const webhookData: any = {}
-
-    // Parsear los datos del form en estructura similar al webhook-kommo
-    for (const [key, value] of formData.entries()) {
-      if (key.includes("leads[add][0]")) {
-        if (!webhookData.leads) {
-          webhookData.leads = { add: [{ id: "", name: "", status_id: "", responsible_user_id: "", created_user_id: "", date_create: "", pipeline_id: "", account_id: "", created_at: "" }] }
-        }
-
-        const field = key.replace("leads[add][0][", "").replace("]", "")
-        ;(webhookData.leads.add[0] as any)[field] = value
-      }
-
-      if (key.includes("account[")) {
-        if (!webhookData.account) {
-          webhookData.account = {}
-        }
-
-        const field = key.replace("account[", "").replace("]", "")
-        ;(webhookData.account as any)[field] = value
-      }
-    }
-
-    console.log("📋 Datos parseados del webhook:", webhookData)
-
-    // Extraer el leadId del webhook (del campo leads.add[0].id)
-    const leadId = webhookData.leads?.add?.[0]?.id
-
-    if (!leadId) {
-      console.error("❌ No se encontró leadId en el webhook")
-      return NextResponse.json({
-        success: false,
-        error: "No se encontró leadId en el webhook"
-      }, { status: 400 })
-    }
-
-    console.log(`🔍 Buscando registro en send_meta para leadId: ${leadId}`)
+    // Parsear datos del webhook usando función unificada
+    const { leadId } = await parseWebhookData(request)
 
     // Buscar el registro en send_meta por leadId
     const sendMetaRecord = await findSendMetaByLeadId(leadId)
@@ -56,8 +18,6 @@ async function handleWebhook(request: NextRequest) {
         message: `No se encontró registro en send_meta para leadId: ${leadId}`
       }, { status: 404 })
     }
-
-    console.log(`✅ Registro encontrado en send_meta para leadId: ${leadId}`)
 
     // Extraer los datos necesarios del registro encontrado
     const metaData = sendMetaRecord
@@ -71,11 +31,11 @@ async function handleWebhook(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Crear nueva conversión con event_name "CargoCRM1"
+    // Crear nueva conversión
     const cargoConversionData = {
       data: [
         {
-          event_name: "CargoCRM1", // Evento específico para status "Cargo"
+          event_name: META_CONFIG.event2, // Evento específico para status "Cargo"
           event_time: Math.floor(Date.now() / 1000),
           action_source: "website",
           event_source_url: metaData.conversionData[0].data[0].event_source_url,
@@ -90,7 +50,7 @@ async function handleWebhook(request: NextRequest) {
     }
 
     // Enviar conversión a Meta API
-    const metaAccessToken = process.env.META_ACCESS_TOKEN
+    const metaAccessToken = META_CONFIG.accessToken
     if (!metaAccessToken) {
       console.error("❌ META_ACCESS_TOKEN no configurado")
       return NextResponse.json({
@@ -99,6 +59,7 @@ async function handleWebhook(request: NextRequest) {
       }, { status: 500 })
     }
 
+    // Enviar conversión a Meta API
     const conversionResult = await sendConversionToMeta(
       {
         ip: originalUserData.client_ip_address,
@@ -107,7 +68,7 @@ async function handleWebhook(request: NextRequest) {
         fbc: originalUserData.fbc,
         eventSourceUrl: metaData.conversionData[0].data[0].event_source_url,
         extractedCode: metaData.extractedCode,
-        eventName: "CargoCRM1" // Especificar que es CargoCRM1
+        eventName: META_CONFIG.event2 // Especificar que es CargoCRM1
       },
       metaAccessToken
     )

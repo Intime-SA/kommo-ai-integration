@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllStatus, createStatus, StatusDocument } from '../../../lib/mongodb-services';
+import { getAllStatus, createStatus } from '../../../lib/mongodb-services';
 
 // GET - Obtener todos los documentos de status
 export async function GET(request: NextRequest) {

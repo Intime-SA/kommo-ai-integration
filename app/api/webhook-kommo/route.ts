@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
-import type { KommoWebhookData, ProcessedMessage } from "@/types/kommo"
+import type { KommoWebhookData, ProcessedMessage, SettingsDocument, StatusDocument } from "@/types/kommo"
 import { processMessageWithAI } from "@/lib/ai-processor"
-import { updateLeadStatusByName, getCurrentLeadStatus } from "@/lib/kommo-api"
+import { getCurrentLeadStatus } from "@/lib/kommo-api"
+import { updateLeadStatusByName } from "@/lib/utils"
 import {
   logWebhookReceived,
   logWebhookParsed,
@@ -20,9 +21,12 @@ import {
   logWebhookValidationPassed,
   logSpamDetected
 } from "@/lib/logger"
-import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, extractCodeFromMessage, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getRules, getActiveRules, getActiveRulesForAI, getSettingsById, SettingsDocument, getAllStatus, StatusDocument, detectAndLaunchWelcomeBot, validateWebhookForProcessing, checkExistingProcessingTimestamp, checkExistingMessageText } from "@/lib/mongodb-services"
+import { createUser, createLead, createTask, updateTask, receiveMessage, createBotAction, getContactContext, findTokenVisit, sendConversionToMeta, saveSendMetaRecord, findLeadById, findContactById, createLeadFromKommoApi, createContactFromKommoApi, isMessageAlreadyProcessed, isConversionAlreadySent, getActiveRulesForAI, getSettingsById, getAllStatus, validateWebhookForProcessing, checkExistingMessageText } from "@/lib/mongodb-services"
 import { getLeadInfo, getContactInfo } from "@/lib/kommo-api"
 import type { KommoApiConfig } from "@/lib/kommo-api"
+import { extractCodeFromMessage } from "@/lib/utils"
+import { KOMMO_CONFIG } from "@/lib/kommo-config"
+import { STATUS_MAPPING } from "@/lib/constants"
 
 // Función helper para sincronizar lead y contacto desde API de Kommo
 async function syncLeadAndContactFromKommoApi(leadId: string, contactId: string) {
@@ -1142,7 +1146,7 @@ export async function POST(request: NextRequest) {
 
           let settings: SettingsDocument | null = null
           try {
-            settings = await getSettingsById("68cc2e745128f9ce1830bfec")
+            settings = await getSettingsById(KOMMO_CONFIG.pipelines[0].settings.id || "")
           } catch (settingsError) {
             logWebhookError(settingsError, "obteniendo settings")
           }
@@ -1211,14 +1215,8 @@ export async function POST(request: NextRequest) {
             timestamp: new Date(Number.parseInt(message.created_at) * 1000).toISOString(),
             aiDecision,
           }
-          console.log("Processed message:", processedMessage)
 
           logAiDecision(aiDecision, message.talk_id, message.entity_id)
-
-          // Here you would typically:
-          // 1. Save the processed message to your database
-          // 2. If aiDecision.shouldChange is true, update the lead status in Kommo
-          // 3. Log the activity for monitoring
 
           if (aiDecision.shouldChange) {
             logStatusChange(aiDecision.currentStatus, aiDecision.newStatus, aiDecision.reasoning, message.talk_id, message.entity_id)
@@ -1226,7 +1224,7 @@ export async function POST(request: NextRequest) {
             try {
               const updateSuccess = await updateLeadStatusByName(
                 message.entity_id,
-                aiDecision.newStatus as keyof typeof import("@/lib/kommo-api").STATUS_MAPPING,
+                aiDecision.newStatus as keyof typeof STATUS_MAPPING,
                 config
               )
 
@@ -1312,24 +1310,6 @@ export async function POST(request: NextRequest) {
               // No lanzamos error aquí para no cortar el flujo principal
             }
           }
-
-          // Verificar si es un mensaje de bienvenida y lanzar bot si corresponde
-    /*       try {
-            const welcomeBotResult = await detectAndLaunchWelcomeBot(
-              message.text,
-              message.entity_id,
-              settings
-            )
-
-            if (welcomeBotResult.launched) {
-              console.log(`🤖 Bot de bienvenida lanzado exitosamente para mensaje: "${message.text}"`)
-            } else if (welcomeBotResult.error) {
-              console.log(`ℹ️ Bot de bienvenida no lanzado: ${welcomeBotResult.error}`)
-            }
-          } catch (welcomeBotError) {
-            console.error(`❌ Error al procesar bot de bienvenida:`, welcomeBotError)
-            // No lanzamos error aquí para no cortar el flujo principal
-          } */
 
           return NextResponse.json({
             success: true,

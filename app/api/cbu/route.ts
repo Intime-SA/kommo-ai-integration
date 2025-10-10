@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllSettings } from "../../../lib/mongodb-services";
 import { updateLeadCustomFields, KommoApiConfig } from "../../../lib/kommo-api";
+import { KOMMO_CONFIG } from "@/lib/kommo-config";
 
 
 
@@ -8,13 +9,10 @@ export async function POST(request: NextRequest) {
   try {
     // Leer el body como texto plano
     const formData = await request.text();
-    console.log("Raw body recibido:", formData);
 
     // Parsear application/x-www-form-urlencoded
     const params = new URLSearchParams(formData);
     const data = Object.fromEntries(params);
-
-    console.log("Body parseado:", data);
 
     // Extraer datos del webhook
     const leadId = data['leads[add][0][id]'];
@@ -30,7 +28,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Consultar settings para obtener el CBU actualizado
-    console.log("🔍 Consultando settings para obtener CBU...");
     const settings = await getAllSettings();
 
     if (!settings || settings.length === 0) {
@@ -45,9 +42,9 @@ export async function POST(request: NextRequest) {
     // Obtener el CBU del primer setting (asumiendo que hay uno principal)
     const accountCBU = settings[0].accountCBU;
     const accountName = settings[0].accountName;
-    console.log("accountName", accountName);
-    console.log("accountCBU", accountCBU);
 
+
+    // Validar que el CBU esté configurado
     if (!accountCBU) {
       console.error("❌ CBU no encontrado en settings");
       return NextResponse.json({
@@ -57,14 +54,10 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    console.log(`✅ CBU obtenido: ${accountCBU}`);
-
     // SETEAR CBU COMO UN CUSTOM FIELD en el lead
-    console.log(`🔄 Actualizando custom field del lead ${leadId} con CBU...`);
-
     const customFieldsValues = [
       {
-        field_id: 977357,
+        field_id: parseInt(KOMMO_CONFIG.customFields.idCbu || "0"),
         values: [
           {
             value: accountCBU
@@ -72,7 +65,7 @@ export async function POST(request: NextRequest) {
         ]
       },
       {
-        field_id: 977359,
+        field_id: parseInt(KOMMO_CONFIG.customFields.idTitularAccount || "0"),
         values: [
           {
             value: accountName
@@ -82,7 +75,6 @@ export async function POST(request: NextRequest) {
     ];
 
     const config: KommoApiConfig = { subdomain };
-
     const updateSuccess = await updateLeadCustomFields(leadId, customFieldsValues, config);
 
     if (!updateSuccess) {
@@ -94,8 +86,6 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    console.log(`✅ Custom field actualizado exitosamente en lead ${leadId}`);
-
     return NextResponse.json({
       success: true,
       message: "Custom field del lead actualizado exitosamente con el CBU",
@@ -104,8 +94,8 @@ export async function POST(request: NextRequest) {
         cbu: accountCBU,
         accountName: accountName,
         subdomain,
-        fieldId: 977357,
-        fieldIdName: 977359
+        fieldId: KOMMO_CONFIG.customFields.idCbu,
+        fieldIdName: KOMMO_CONFIG.customFields.idTitularAccount
       }
     });
 

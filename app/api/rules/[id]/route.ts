@@ -3,9 +3,9 @@ import {
   getRuleById,
   updateRule,
   deleteRule,
-  RuleDocument
 } from '@/lib/mongodb-services';
 import { logOutgoingHttpRequest, logIncomingHttpResponse, logHttpError } from '@/lib/logger';
+import { RuleDocument } from '@/types/kommo';
 
 // Validar datos para actualizar regla
 function validateUpdateData(data: any): Partial<Omit<RuleDocument, '_id' | 'createdAt'>> {
