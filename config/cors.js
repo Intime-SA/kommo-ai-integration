@@ -2,6 +2,7 @@
 const corsConfig = {
   // URLs permitidas para CORS
   allowedOrigins: [
+    'https://guba-redirect-qhwv.vercel.app', // money maker
     'https://redirect-hernan-2.vercel.app',
     'https://redirect-tee-1.vercel.app',
     'https://guba-redirect.vercel.app',

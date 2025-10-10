@@ -30,7 +30,7 @@ export const KOMMO_CONFIG = {
         Perdido: process.env.KOMMO_STATUS_PERDIDO,
       },
       settings: {
-        id: process.env.KOMMO_SETTINGS_ID,
+        id: process.env.MONGO_SETTINGS_ID,
       },
     },
     {
