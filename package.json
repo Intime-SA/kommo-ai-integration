@@ -8,6 +8,7 @@
     "dev:3001": "node scripts/start-with-port.js 3001",
     "dev:4000": "node scripts/start-with-port.js 4000",
     "dev:8080": "node scripts/start-with-port.js 8080",
+    "dev:money": "env $(grep -v '^#' .env.money | xargs) bun run dev",
     "lint": "next lint",
     "start": "next start"
   },

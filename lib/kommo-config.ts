@@ -86,7 +86,6 @@ export const USER_REGISTRATION_CONFIG = {
       apiUrl: process.env.USER_REGISTRATION_API_URL,
       token: process.env.USER_REGISTRATION_TOKEN,
       parentId: process.env.USER_REGISTRATION_PARENT_ID,
-
     },
     {
       name: "moneyMaker",

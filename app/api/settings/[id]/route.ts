@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSettingsById, updateSettingsById, SettingsDocument } from '../../../../lib/mongodb-services';
+import { getSettingsById, updateSettingsById } from '../../../../lib/mongodb-services';
+import { SettingsDocument } from '@/types/kommo';
 
 // GET - Obtener un documento de settings específico por ID
 export async function GET(
