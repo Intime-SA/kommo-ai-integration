@@ -1724,6 +1724,7 @@ export class KommoDatabaseService {
 
       return {
         _id: result._id.toString(),
+        accountName: result.accountName,
         accountCBU: result.accountCBU,
         context: result.context,
         message: result.message,
