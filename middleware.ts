@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 
 // Lista de orígenes permitidos
 const allowedOrigins = [
+  'https://kommo-ai-mooney-maker.vercel.app',
   'https://kommo-ai-dashboard-fstc.vercel.app',
   'https://guba-redirect-qhwv.vercel.app', // money maker
   'https://redirect-hernan-2.vercel.app',
