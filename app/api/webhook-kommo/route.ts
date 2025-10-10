@@ -176,17 +176,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Validar que el pipeline sea el correcto (11862040)
-    if (pipelineId && pipelineId !== "11862040") {
-      console.log(`🚫 Webhook RECHAZADO: Pipeline ${pipelineId} no autorizado. Solo se procesan webhooks del pipeline 11862040`)
+    if (pipelineId && pipelineId !== KOMMO_CONFIG.pipelines[0].id) {
+      console.log(`🚫 Webhook RECHAZADO: Pipeline ${pipelineId} no autorizado. Solo se procesan webhooks del pipeline ${KOMMO_CONFIG.pipelines[0].id}`)
       return NextResponse.json({
         success: false,
         message: `Webhook rechazado: Pipeline ${pipelineId} no autorizado. Solo se procesan webhooks del pipeline 11862040`,
         pipeline_id: pipelineId,
-        required_pipeline: "11862040"
+        required_pipeline: KOMMO_CONFIG.pipelines[0].id
       }, { status: 200 }) // 200 porque es un procesamiento válido pero rechazado
     }
 
-    if (pipelineId === "11862040") {
+    if (pipelineId === KOMMO_CONFIG.pipelines[0].id) {
       console.log(`✅ Validación de pipeline exitosa: Procesando webhook del pipeline ${pipelineId}`)
     } else {
       console.log(`⚠️ No se pudo validar pipeline (posiblemente webhook sin leads), continuando procesamiento...`)
