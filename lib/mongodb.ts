@@ -1,7 +1,6 @@
 import { MongoClient, ServerApiVersion, MongoClientOptions } from 'mongodb';
-import { MONGO_CONFIG } from './kommo-config';
 
-const uri = MONGO_CONFIG.uri
+const uri = process.env.MONGO_DB_URI;
 
 if (!uri) {
   throw new Error('Please define the MONGODB_URI environment variable inside .env.local');

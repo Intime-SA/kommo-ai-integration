@@ -7,7 +7,7 @@ import {
   logWelcomeBotError,
   logger,
 } from "./logger";
-import { META_CONFIG, MONGO_CONFIG } from "./kommo-config";
+import { KOMMO_CONFIG, META_CONFIG, MONGO_CONFIG } from "./kommo-config";
 import { BotActionLog, ChangeStatusLog, LogEntry, LogsQueryParams, LogsResponse, ReceivedMessageLog, RuleDocument, RulesQueryParams, RulesResponse, SendMetaLog, UserDocument, LeadDocument, TaskDocument, MessageDocument, BotActionDocument, TokenVisitDocument, ContactContext, StatusDocument, SettingsDocument } from "@/types/kommo";
 import { convertToArgentinaISO, convertToUTC, getCurrentArgentinaISO, getCurrentDate, getDateHoursAgo } from "./utils";
 
@@ -36,7 +36,7 @@ export class KommoDatabaseService {
 
   private async getCollection(collectionName: string) {
     const client = await this.getClient();
-    const db = client.db("kommo");
+    const db = client.db(MONGO_CONFIG.database);
     return db.collection(collectionName);
   }
 
@@ -50,7 +50,7 @@ export class KommoDatabaseService {
     sourceName: string;
     messageText: string;
   }): Promise<UserDocument> {
-    const collection = await this.getCollection("users");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.users || "");
 
     // Verificar si ya existe un usuario con este client.id
     const existingUser = await collection.findOne({ clientId: data.client.id });
@@ -107,7 +107,7 @@ export class KommoDatabaseService {
     messageText: string;
     sourceName: string;
   }): Promise<LeadDocument> {
-    const collection = await this.getCollection("leads");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.leads || "");
 
     // Verificar si ya existe un lead con este uid
     const existingLead = await collection.findOne({ uid: data.uid });
@@ -165,7 +165,7 @@ export class KommoDatabaseService {
     isRead: string;
     createdAt: string | number;
   }): Promise<TaskDocument> {
-    const collection = await this.getCollection("tasks");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.tasks || "");
 
     // Verificar si ya existe una task con este talkId
     const existingTask = await collection.findOne({ talkId: data.talkId });
@@ -216,7 +216,7 @@ export class KommoDatabaseService {
     isRead: string;
     updatedAt: string | number;
   }): Promise<TaskDocument> {
-    const collection = await this.getCollection("tasks");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.tasks || "");
 
     const updateData: Partial<TaskDocument> = {
       contactId: data.contactId,
@@ -266,7 +266,7 @@ export class KommoDatabaseService {
       file_name: string;
     };
   }): Promise<MessageDocument> {
-    const collection = await this.getCollection("messages");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.messages || "");
 
     // Verificar si ya existe un mensaje con este id
     const existingMessage = await collection.findOne({ text: data.text });
@@ -335,7 +335,7 @@ export class KommoDatabaseService {
       error?: string;
     };
   }): Promise<BotActionDocument> {
-    const collection = await this.getCollection("bot_actions");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
 
     // Crear nuevo registro de acción del bot
     const botActionDocument: BotActionDocument = {
@@ -360,7 +360,7 @@ export class KommoDatabaseService {
     token: string;
     lead: any;
   }): Promise<TokenVisitDocument> {
-    const collection = await this.getCollection("token_visit");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.tokenVisit || "");
 
     // Crear nuevo registro de token visit
     const tokenVisitDocument: TokenVisitDocument = {
@@ -376,7 +376,7 @@ export class KommoDatabaseService {
 
   // Servicio para buscar token por valor
   async findTokenVisit(token: string): Promise<TokenVisitDocument | null> {
-    const collection = await this.getCollection("token_visit");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.tokenVisit || "");
     const result = await collection.findOne({ token });
     return result
       ? ({ ...result, _id: result._id.toString() } as TokenVisitDocument)
@@ -386,7 +386,7 @@ export class KommoDatabaseService {
   // Servicio para obtener contexto histórico de un contacto (últimas 24 horas)
   async getContactContext(contactId: string): Promise<ContactContext> {
     const client = await this.getClient();
-    const db = client.db("kommo");
+    const db = client.db(MONGO_CONFIG.database);
 
     // Calcular fecha límite (24 horas atrás)
     const twentyFourHoursAgo = new Date();
@@ -401,11 +401,11 @@ export class KommoDatabaseService {
       botActionsResult,
     ] = await Promise.all([
       // Información del usuario
-      db.collection("users").findOne({ contactId }),
+      db.collection(MONGO_CONFIG.collection.users || "").findOne({ contactId }),
 
       // Leads activos (últimas 24 horas)
       db
-        .collection("leads")
+        .collection(MONGO_CONFIG.collection.leads || "")
         .find({
           contactId,
           createdAt: { $gte: twentyFourHoursAgo.toISOString() },
@@ -415,7 +415,7 @@ export class KommoDatabaseService {
 
       // Mensajes recientes
       db
-        .collection("messages")
+        .collection(MONGO_CONFIG.collection.messages || "")
         .find({
           contactId,
           createdAt: { $gte: twentyFourHoursAgo.toISOString() },
@@ -425,7 +425,7 @@ export class KommoDatabaseService {
 
       // Tareas activas
       db
-        .collection("tasks")
+        .collection(MONGO_CONFIG.collection.tasks || "")
         .find({
           contactId,
           createdAt: { $gte: twentyFourHoursAgo.toISOString() },
@@ -435,7 +435,7 @@ export class KommoDatabaseService {
 
       // Acciones del bot recientes
       db
-        .collection("bot_actions")
+          .collection(MONGO_CONFIG.collection.botActions || "")
         .find({
           contactId,
           createdAt: { $gte: twentyFourHoursAgo.toISOString() },
@@ -544,7 +544,7 @@ export class KommoDatabaseService {
   async getReceivedMessagesLogs(
     params: LogsQueryParams
   ): Promise<{ logs: ReceivedMessageLog[]; total: number }> {
-    const collection = await this.getCollection("messages");
+      const collection = await this.getCollection(MONGO_CONFIG.collection.messages || "");
 
     // Construir pipeline de agregación para messages
     const pipeline: any[] = [];
@@ -687,7 +687,7 @@ export class KommoDatabaseService {
   async getChangeStatusLogs(
     params: LogsQueryParams
   ): Promise<{ logs: ChangeStatusLog[]; total: number }> {
-    const collection = await this.getCollection("bot_actions");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
 
     // Construir pipeline de agregación
     const pipeline: any[] = [];
@@ -824,7 +824,7 @@ export class KommoDatabaseService {
   async getBotActionsLogs(
     params: LogsQueryParams
   ): Promise<{ logs: BotActionLog[]; total: number }> {
-    const collection = await this.getCollection("bot_actions");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
 
     // Construir pipeline de agregación
     const pipeline: any[] = [];
@@ -971,7 +971,7 @@ export class KommoDatabaseService {
   async getSendMetaLogs(
     params: LogsQueryParams
   ): Promise<{ logs: SendMetaLog[]; total: number }> {
-    const collection = await this.getCollection("send_meta");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.sendMeta || "");
 
     // Construir filtros para consulta directa
     const query: any = {};
@@ -2658,7 +2658,7 @@ export async function detectAndLaunchWelcomeBot(
 export async function checkExistingMessageText(messageText: string, entityId: string, processingTimestamp: string): Promise<boolean> {
   try {
     const db = await clientPromise;
-    const collection = db.db("kommo").collection<BotActionDocument>("bot_actions");
+    const collection = db.db(MONGO_CONFIG.database).collection<BotActionDocument>(MONGO_CONFIG.collection.botActions || "");
 
     // Normalizar el mensaje para comparación (trim y lowercase) - consistente con cómo se guarda
     const normalizedMessage = messageText.trim().toLowerCase();
