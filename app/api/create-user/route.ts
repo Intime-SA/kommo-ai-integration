@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   createUserFromLead,
+  updateLeadCustomFields,
   updateLeadName,
   type KommoApiConfig,
 } from "@/lib/kommo-api";
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
 
     // Ejecutar el proceso completo de creación de usuario
     const result = await createUserFromLead(leadId, config, platform);
+    console.log(result, 'RESULTADO EZE');
 
     // Verificar si la respuesta de la API de registro fue exitosa
     const registrationResponse = result.registrationResult;
@@ -35,6 +37,33 @@ export async function POST(request: NextRequest) {
     // Actualizar el nombre del lead con el username
     if (registrationResponse && registrationResponse.success === true) {
       leadNameUpdated = await updateLeadName(leadId, result.username, config);
+      if (platform === "moneyMaker") {
+
+        const customFieldsValues = [
+          {
+            field_id: parseInt(KOMMO_CONFIG.customFields.idRegisterLink || "0"),
+            values: [
+              {
+                value: registrationResponse.url
+              }
+            ]
+          }
+        ];
+        const updateSuccess = await updateLeadCustomFields(
+          leadId,
+          customFieldsValues,
+          config
+        )
+        if (!updateSuccess) {
+          logger.error(`❌ Failed to update lead custom field for lead ${leadId}`);
+          return NextResponse.json({
+            success: false,
+            error: 'Failed to update lead custom field',
+            leadId: leadId,
+            registrationResult: registrationResponse
+          }, { status: 500 });
+        }
+      }
     } else {
       logger.info(
         `⚠️ Registration was not successful, skipping lead name update. Response:`,

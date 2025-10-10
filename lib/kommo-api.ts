@@ -89,6 +89,8 @@ export async function updateLeadCustomFields(
   const requestBody = { custom_fields_values: customFieldsValues };
   logger.info(JSON.stringify(requestBody), "requestBody");
 
+  console.log(requestBody, 'REQUEST BODY EZE');
+
   try {
     // Log de petición saliente
     logOutgoingHttpRequest(
@@ -131,7 +133,6 @@ export async function updateLeadCustomFields(
     logLeadInfoSuccess(result);
     return true;
   } catch (error) {
-    const responseTime = Date.now() - startTime;
     logHttpError("updateLeadCustomFields", error, url);
     logKommoApiError("updateLeadCustomFields", error);
     return false;
@@ -476,7 +477,7 @@ interface ParamsRegisterMoneyMaker {
 export async function registerMoneyMaker(
   params: ParamsRegisterMoneyMaker
 ): Promise<ResponseMoneyMaker> {
-  const url = `https://api-paybot-b.vercel.app/api/register?phone=${params.phone}&ref=${params.ref}&name=${params.name}`;
+  const url = `https://api-paybot-b.vercel.app/api/webhook/register?phone=${params.phone}&ref=${params.ref}&name=${params.name}`;
 
   try {
     const response = await fetch(url, {
@@ -525,7 +526,7 @@ export async function createUserFromLead(
 
     let username = "";
     let registrationResult = null;
-    let name = contactInfo.name;
+    let name = contactInfo.name.split(" ").join("");
     let ref = "WIN1AI";
 
     // Extract phone and email from custom fields
@@ -537,7 +538,7 @@ export async function createUserFromLead(
       (field: any) => field.field_code === "PHONE"
     );
     if (phoneField && phoneField.values && phoneField.values.length > 0) {
-      phone = phoneField.values[0].value;
+      phone = phoneField.values[0].value.replace(" ", "");
     }
 
     try {
@@ -552,7 +553,7 @@ export async function createUserFromLead(
         );
         registrationResult = await registerUserWithRetry(username, 2, platform);
       } else if (platform === "moneyMaker") {
-        registrationResult = await registerMoneyMaker(phone, ref, name);
+        registrationResult = await registerMoneyMaker({ phone, ref, name });
         console.log(`👤 Generated username: ${username}`);
       }
     } catch (error) {
@@ -567,10 +568,11 @@ export async function createUserFromLead(
     return {
       leadId,
       contactId,
-      username,
+      username: platform === "greenBet" ? username : registrationResult.username,
       registrationResult,
       contactInfo,
       leadInfo,
+
     };
   } catch (error) {
     console.error(

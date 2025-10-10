@@ -10,9 +10,11 @@ export const KOMMO_CONFIG = {
     tagCbu: process.env.KOMMO_CUSTOM_FIELD_TAG_CBU,
     tagTitularAccount: process.env.KOMMO_CUSTOM_FIELD_TAG_TITULAR_ACCOUNT,
     tagWalink: process.env.KOMMO_CUSTOM_FIELD_TAG_WALINK,
+    tagRegisterLink: process.env.KOMMO_CUSTOM_FIELD_TAG_REGISTER_LINK,
     idCbu: process.env.KOMMO_CUSTOM_FIELD_ID_CBU,
     idTitularAccount: process.env.KOMMO_CUSTOM_FIELD_ID_TITULAR_ACCOUNT,
     idWalink: process.env.KOMMO_CUSTOM_FIELD_ID_WALINK,
+    idRegisterLink: process.env.KOMMO_CUSTOM_FIELD_ID_REGISTER_LINK,
   },
   pipelines: [
     {
