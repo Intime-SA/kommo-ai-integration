@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       token: token,
+      redirectNumber: tokenVisitDocument.redirectNumber,
       message: "Token generado correctamente",
     });
   } catch (error) {

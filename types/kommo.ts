@@ -607,6 +607,10 @@ export interface TokenVisitDocument {
   token: string;
   lead: any; // El objeto lead que viene del payload
   createdAt: string; // ISO string en horario Argentina
+  redirectNumber?: {
+    name: string;
+    phone: string;
+  };
 }
 
 // Interface para documentos de settings
@@ -619,6 +623,10 @@ export interface SettingsDocument {
   updatedAt?: string;
   accountName: string;
   walink?: string;
+  numbers?: Array<{
+    name: string;
+    phone: string;
+  }>;
 }
 
 // Interface para documentos de status

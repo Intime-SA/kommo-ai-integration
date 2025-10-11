@@ -364,16 +364,38 @@ export class KommoDatabaseService {
   }): Promise<TokenVisitDocument> {
     const collection = await this.getCollection(MONGO_CONFIG.collection.tokenVisit || "");
 
+    const settings = await this.getAllSettings();
+
+    // Seleccionar número de redireccionamiento de forma rotativa
+    let redirectNumber: { name: string; phone: string } | undefined;
+    console.log(settings, 'settings');
+
+    if (settings.length > 0 && settings[0].numbers && settings[0].numbers.length > 0) {
+      const availableNumbers = settings[0].numbers;
+
+      // Algoritmo simple de round-robin basado en minutos del timestamp actual
+      // Esto distribuye las redirecciones entre los números disponibles
+      const now = new Date();
+      const currentMinutes = now.getMinutes();
+      const selectedIndex = currentMinutes % availableNumbers.length;
+
+      redirectNumber = availableNumbers[selectedIndex];
+      console.log(`🔄 Número seleccionado para redireccionamiento: ${redirectNumber.name} (${redirectNumber.phone})`);
+    } else {
+      console.log("⚠️ No hay números disponibles en settings para redireccionamiento");
+    }
+
     // Crear nuevo registro de token visit
     const tokenVisitDocument: TokenVisitDocument = {
       token: data.token,
       lead: data.lead,
       createdAt: getCurrentArgentinaISO(),
+      redirectNumber: redirectNumber,
     };
 
     const { _id, ...tokenVisitData } = tokenVisitDocument;
     const result = await collection.insertOne(tokenVisitData);
-    return { ...tokenVisitDocument, _id: result.insertedId.toString() };
+    return { ...tokenVisitDocument, _id: result.insertedId.toString(), redirectNumber: redirectNumber };
   }
 
   // Servicio para buscar token por valor
@@ -1653,7 +1675,7 @@ export class KommoDatabaseService {
    * Obtener todos los documentos de settings
    */
   async getAllSettings(): Promise<SettingsDocument[]> {
-    const collection = await this.getCollection("settings");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.settings || "");
     const settings = await collection.find({}).toArray();
 
     return settings.map((setting) => ({
@@ -1665,6 +1687,7 @@ export class KommoDatabaseService {
       updatedAt: setting.updatedAt,
       accountName: setting.accountName,
       walink: setting.walink,
+      numbers: setting.numbers,
     })) as SettingsDocument[];
   }
 
