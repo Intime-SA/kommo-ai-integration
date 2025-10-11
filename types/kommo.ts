@@ -611,6 +611,7 @@ export interface TokenVisitDocument {
     name: string;
     phone: string;
   };
+  message?: string;
 }
 
 // Interface para documentos de settings

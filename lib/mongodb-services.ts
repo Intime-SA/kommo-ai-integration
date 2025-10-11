@@ -368,7 +368,6 @@ export class KommoDatabaseService {
 
     // Seleccionar número de redireccionamiento de forma rotativa
     let redirectNumber: { name: string; phone: string } | undefined;
-    console.log(settings, 'settings');
 
     if (settings.length > 0 && settings[0].numbers && settings[0].numbers.length > 0) {
       const availableNumbers = settings[0].numbers;
@@ -391,11 +390,12 @@ export class KommoDatabaseService {
       lead: data.lead,
       createdAt: getCurrentArgentinaISO(),
       redirectNumber: redirectNumber,
+      message: settings[0].message,
     };
 
     const { _id, ...tokenVisitData } = tokenVisitDocument;
     const result = await collection.insertOne(tokenVisitData);
-    return { ...tokenVisitDocument, _id: result.insertedId.toString(), redirectNumber: redirectNumber };
+    return { ...tokenVisitDocument, _id: result.insertedId.toString(), redirectNumber: redirectNumber, message: settings[0].message };
   }
 
   // Servicio para buscar token por valor
@@ -403,7 +403,7 @@ export class KommoDatabaseService {
     const collection = await this.getCollection(MONGO_CONFIG.collection.tokenVisit || "");
     const result = await collection.findOne({ token });
     return result
-      ? ({ ...result, _id: result._id.toString() } as TokenVisitDocument)
+      ? ({ ...result, _id: result._id.toString(), message: result.message } as TokenVisitDocument)
       : null;
   }
 
@@ -1714,6 +1714,7 @@ export class KommoDatabaseService {
         createdAt: setting.createdAt,
         updatedAt: setting.updatedAt,
         accountName: setting.accountName,
+        numbers: setting.numbers,
       } as SettingsDocument;
 
     } catch (error) {
@@ -1729,7 +1730,7 @@ export class KommoDatabaseService {
     id: string,
     updateData: Partial<Omit<SettingsDocument, "_id">>
   ): Promise<SettingsDocument | null> {
-    const collection = await this.getCollection("settings");
+    const collection = await this.getCollection(MONGO_CONFIG.collection.settings || "");
 
     const updateDoc = {
       ...updateData,
@@ -1753,6 +1754,7 @@ export class KommoDatabaseService {
         message: result.message,
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,
+        numbers: result.numbers,
       } as SettingsDocument;
     } catch (error) {
       return null;

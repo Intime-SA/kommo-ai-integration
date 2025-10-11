@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
       success: true,
       token: token,
       redirectNumber: tokenVisitDocument.redirectNumber,
-      message: "Token generado correctamente",
+      message: tokenVisitDocument.message,
+      successMessage: "Token generado correctamente",
     });
   } catch (error) {
     console.error("Error en endpoint /api/token/visit_kommo:", error);

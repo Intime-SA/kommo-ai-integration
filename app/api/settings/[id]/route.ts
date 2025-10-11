@@ -77,7 +77,7 @@ export async function PUT(
     }
 
     // Validar que al menos uno de los campos actualizables esté presente
-    const updateFields = ['accountCBU', 'context', 'message'];
+    const updateFields = ['accountCBU', 'context', 'message', 'numbers', 'accountName'];
     const hasValidField = updateFields.some(field => body[field] !== undefined);
 
     if (!hasValidField) {
@@ -85,7 +85,7 @@ export async function PUT(
         {
           success: false,
           error: 'Campos requeridos',
-          message: 'Debe proporcionar al menos uno de los campos: accountCBU, context, message'
+          message: 'Debe proporcionar al menos uno de los campos: accountCBU, context, message, numbers, accountName'
         },
         { status: 400 }
       );
@@ -97,6 +97,7 @@ export async function PUT(
     if (body.context !== undefined) updateData.context = body.context;
     if (body.message !== undefined) updateData.message = body.message;
     if (body.accountName !== undefined) updateData.accountName = body.accountName;
+    if (body.numbers !== undefined) updateData.numbers = body.numbers;
 
     // Actualizar el documento
     const updatedSetting = await updateSettingsById(id, updateData);
