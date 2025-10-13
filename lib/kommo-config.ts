@@ -73,7 +73,7 @@ export const META_CONFIG = {
   accessToken: process.env.META_ACCESS_TOKEN,
   pixelId: process.env.NEXT_PUBLIC_META_PIXEL_ID,
   event1: process.env.NEXT_PUBLIC_META_EVENT_1 || "ConversacionCRM1",
-  event2: process.env.NEXT_PUBLIC_META_EVENT_1 || "CargoCRM1",
+  event2: process.env.NEXT_PUBLIC_META_EVENT_2 || "CargoCRM1",
 };
 
 
