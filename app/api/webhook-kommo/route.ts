@@ -516,7 +516,7 @@ export async function POST(request: NextRequest) {
                 const conversionResult = await sendConversionToMeta({
                   ...tokenVisit.lead,
                   extractedCode: extractedCode,
-                  eventName: "ConversacionCRM1"
+                  eventName: process.env.NEXT_PUBLIC_META_EVENT_1
                 }, metaAccessToken)
 
                 // Verificar si la conversión se envió exitosamente (no fue duplicada)
@@ -544,7 +544,7 @@ export async function POST(request: NextRequest) {
                 const conversionData = {
                   data: [
                     {
-                      event_name: "ConversacionCRM1",
+                      event_name: process.env.NEXT_PUBLIC_META_EVENT_1,
                       event_time: Math.floor(Date.now() / 1000),
                       action_source: "website",
                       event_source_url: tokenVisit.lead.eventSourceUrl || "https://kommo-ai-integration.vercel.app/",
@@ -1006,7 +1006,7 @@ export async function POST(request: NextRequest) {
               console.log(`✅ Token encontrado:`, tokenVisit)
 
               // Verificar si ya se envió una conversión para este código y tipo de evento en los últimos 30 minutos
-              const conversionAlreadySent = await isConversionAlreadySent(extractedCode, "ConversacionCRM1")
+              const conversionAlreadySent = await isConversionAlreadySent(extractedCode, process.env.NEXT_PUBLIC_META_EVENT_1 || "ConversacionCRM1")
               if (conversionAlreadySent) {
                 console.log(`⚠️ Conversión ya enviada para código ${extractedCode} en los últimos 30 minutos - omitiendo envío duplicado`)
                 // Continuar con el procesamiento del mensaje (no retornar aquí)
@@ -1024,14 +1024,14 @@ export async function POST(request: NextRequest) {
               const conversionResult = await sendConversionToMeta({
                 ...tokenVisit.lead,
                 extractedCode: extractedCode,
-                eventName: "ConversacionCRM1"
+                eventName: process.env.NEXT_PUBLIC_META_EVENT_1
               }, metaAccessToken)
 
               // Preparar datos para guardar en send_meta
               const conversionData = {
                 data: [
                   {
-                    event_name: "ConversacionCRM1",
+                    event_name: process.env.NEXT_PUBLIC_META_EVENT_1,
                     event_time: Math.floor(Date.now() / 1000),
                     action_source: "website",
                     event_source_url: tokenVisit.lead.eventSourceUrl || "https://kommo-ai-integration.vercel.app",
