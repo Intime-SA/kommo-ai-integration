@@ -730,7 +730,7 @@ export async function POST(request: NextRequest) {
             const cargoConversionData = {
               data: [
                 {
-                  event_name: "CargoCRM1", // Evento específico para status "Cargo"
+                  event_name: process.env.NEXT_PUBLIC_META_EVENT_2 || "CargoCRM1", // Evento específico para status "Cargo"
                   event_time: Math.floor(Date.now() / 1000),
                   action_source: "website",
                   event_source_url: metaData.conversionData[0].data[0].event_source_url,
@@ -757,7 +757,7 @@ export async function POST(request: NextRequest) {
                   fbc: originalUserData.fbc,
                   eventSourceUrl: metaData.conversionData[0].data[0].event_source_url,
                   extractedCode: metaData.extractedCode,
-                  eventName: "CargoCRM1" // Especificar que es CargoCRM1
+                  eventName: process.env.NEXT_PUBLIC_META_EVENT_2 || "CargoCRM1" // Especificar que es CargoCRM1
                 },
                 metaAccessToken
               )
@@ -858,11 +858,11 @@ export async function POST(request: NextRequest) {
             const metaData = existingLead.meta_data
             const originalUserData = metaData.conversionData[0].data[0].user_data
 
-            // Crear nueva conversión con event_name "CargoCRM1"
+            // Crear nueva conversión con event_name "${process.env.NEXT_PUBLIC_META_EVENT_2 || "CargoCRM1"}"   
             const cargoConversionData = {
               data: [
                 {
-                  event_name: "CargoCRM1", // Evento específico para status "Cargo"
+                  event_name: process.env.NEXT_PUBLIC_META_EVENT_2 || "CargoCRM1", // Evento específico para status "Cargo"
                   event_time: Math.floor(Date.now() / 1000),
                   action_source: "website",
                   event_source_url: metaData.conversionData[0].data[0].event_source_url,
@@ -921,15 +921,15 @@ export async function POST(request: NextRequest) {
               )
 
               if (saveResult.success) {
-                console.log(`💾 Registro guardado en send_meta para lead add Cargo: ${leadAdd.id}`)
+                console.log(`💾 Registro guardado en send_meta para lead add "${process.env.NEXT_PUBLIC_META_EVENT_2 || "CargoCRM1"}": ${leadAdd.id}`)
               } else {
                 console.error(`❌ Error al guardar en send_meta para lead add ${leadAdd.id}:`, saveResult.error)
               }
 
               if (conversionResult.success) {
-                console.log(`🎉 Conversión "CargoCRM1" enviada exitosamente para lead add: ${leadAdd.id}`)
+                console.log(`🎉 Conversión "${process.env.NEXT_PUBLIC_META_EVENT_2 || "CargoCRM1"}" enviada exitosamente para lead add: ${leadAdd.id}`)
               } else {
-                console.error(`❌ Error al enviar conversión "CargoCRM1" para lead add ${leadAdd.id}:`, conversionResult.error)
+                console.error(`❌ Error al enviar conversión "${process.env.NEXT_PUBLIC_META_EVENT_2 || "CargoCRM1"}" para lead add ${leadAdd.id}:`, conversionResult.error)
               }
             }
           } else {
