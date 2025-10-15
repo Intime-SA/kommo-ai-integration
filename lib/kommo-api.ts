@@ -495,7 +495,7 @@ interface ParamsRegisterMoneyMaker {
 export async function registerMoneyMaker(
   params: ParamsRegisterMoneyMaker
 ): Promise<ResponseMoneyMaker> {
-  const url = `https://api-paybot-b.vercel.app/api/webhook/register?phone=${params.phone}&ref=${params.ref}&name=${params.name}`;
+  const url = `${process.env.USER_REGISTRATION_SCRIPT_URL}/api/webhook/register?phone=${params.phone}&ref=${params.ref}&name=${params.name}`;
 
   try {
     const response = await fetch(url, {
@@ -544,7 +544,8 @@ export async function createUserFromLead(
 
     let username = "";
     let registrationResult = null;
-    let name = cleanNameFromEmojis(contactInfo.name).split(" ").join("");
+    let name = contactInfo.name.replace(/[!=+]/g, "").split(" ").join("");
+    console.log(name, 'NAME PROCESSED');
     let ref = "WIN1AI";
 
     // Extract phone and email from custom fields
@@ -571,8 +572,8 @@ export async function createUserFromLead(
         );
         registrationResult = await registerUserWithRetry(username, 2, platform);
       } else if (platform === "moneyMaker") {
-        registrationResult = await registerMoneyMaker({ phone, ref, name });
-        console.log(`👤 Generated username: ${registrationResult.username}`);
+        registrationResult = await registerMoneyMaker({ phone, ref, name: name || 'user' });
+        console.log(`👤 Generated username: ${name}`);
       }
     } catch (error) {
       console.error(
@@ -582,6 +583,7 @@ export async function createUserFromLead(
       throw error;
     } 
 
+    console.log(registrationResult, 'REGISTRATION RESULT EZE');
     console.log(`✅ User creation completed successfully for lead ${leadId}`);
     return {
       leadId,
