@@ -319,6 +319,13 @@ function cleanNameFromEmojis(name: string): string {
   return name.replace(emojiRegex, 'x');
 }
 
+// Function to generate fallback username when registration result is undefined
+function generateFallbackUsername(): string {
+  // Generate random number between 1000 and 9999
+  const randomNum = Math.floor(Math.random() * 9000) + 1000;
+  return `user${randomNum}`;
+}
+
 // Generate username from contact name and ID
 export function generateUsername(
   contactName: string,
@@ -579,7 +586,7 @@ export async function createUserFromLead(
     return {
       leadId,
       contactId,
-      username: platform === "greenBet" ? username : registrationResult.username,
+      username: platform === "greenBet" ? username : (registrationResult.username || generateFallbackUsername()),
       registrationResult,
       contactInfo,
       leadInfo,
