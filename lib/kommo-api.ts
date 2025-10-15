@@ -311,13 +311,24 @@ export async function getCurrentLeadStatus(
   }
 }
 
+// Function to clean emojis and special characters from name, replacing emojis with 'x'
+function cleanNameFromEmojis(name: string): string {
+  // Regex to match emojis (basic range for common emojis)
+  const emojiRegex = /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu;
+  // Replace each emoji with 'x'
+  return name.replace(emojiRegex, 'x');
+}
+
 // Generate username from contact name and ID
 export function generateUsername(
   contactName: string,
   contactId: number
 ): string {
+  // Clean emojis from name first
+  const cleanedName = cleanNameFromEmojis(contactName);
+
   // Take first 3 letters of contact name, remove spaces and special characters
-  const cleanName = contactName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+  const cleanName = cleanedName.replace(/[^a-zA-Z]/g, "").toLowerCase();
   const firstThreeLetters = cleanName.substring(0, 3).padEnd(3, "x"); // Pad with 'x' if name is shorter than 3 chars
 
   // Take first 3 characters of contactId as string
@@ -526,7 +537,7 @@ export async function createUserFromLead(
 
     let username = "";
     let registrationResult = null;
-    let name = contactInfo.name.split(" ").join("");
+    let name = cleanNameFromEmojis(contactInfo.name).split(" ").join("");
     let ref = "WIN1AI";
 
     // Extract phone and email from custom fields
@@ -554,7 +565,7 @@ export async function createUserFromLead(
         registrationResult = await registerUserWithRetry(username, 2, platform);
       } else if (platform === "moneyMaker") {
         registrationResult = await registerMoneyMaker({ phone, ref, name });
-        console.log(`👤 Generated username: ${username}`);
+        console.log(`👤 Generated username: ${registrationResult.username}`);
       }
     } catch (error) {
       console.error(
@@ -562,7 +573,7 @@ export async function createUserFromLead(
         error
       );
       throw error;
-    }
+    } 
 
     console.log(`✅ User creation completed successfully for lead ${leadId}`);
     return {
