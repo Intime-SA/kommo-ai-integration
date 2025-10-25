@@ -605,6 +605,7 @@ export interface BotActionDocument {
 export interface TokenVisitDocument {
   _id?: string;
   token: string;
+  campaignId: string;
   lead: any; // El objeto lead que viene del payload
   createdAt: string; // ISO string en horario Argentina
   redirectNumber?: {

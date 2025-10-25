@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Extraer los datos del payload
-    const { lead } = body;
+    const { lead, campaignId } = body;
 
     // Validar que el lead esté presente
     if (!lead) {
@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
 
     // Guardar en la base de datos
     const tokenVisitDocument = await createTokenVisit({
+      campaignId: campaignId || "",
       token,
       lead,
     });

@@ -359,6 +359,7 @@ export class KommoDatabaseService {
 
   // Servicio para crear registro de token visit
   async createTokenVisit(data: {
+    campaignId?: string;
     token: string;
     lead: any;
   }): Promise<TokenVisitDocument> {
@@ -391,6 +392,7 @@ export class KommoDatabaseService {
       createdAt: getCurrentArgentinaISO(),
       redirectNumber: redirectNumber,
       message: settings[0].message,
+      campaignId: data.campaignId || "",
     };
 
     const { _id, ...tokenVisitData } = tokenVisitDocument;
@@ -1943,7 +1945,8 @@ export async function saveSendMetaRecord(
   conversionDataArray: any[],
   messageData: any,
   extractedCode: string,
-  conversionResults: any[]
+  conversionResults: any[],
+  campaignId?: string
 ) {
   try {
 
@@ -1986,6 +1989,7 @@ export async function saveSendMetaRecord(
         conversionData: updatedConversionData,
         conversionResults: updatedConversionResults,
         timestamp: utcTimestamp,
+        campaignId: campaignId || "",
         success: updatedConversionResults.some(
           (result) => result && result.success
         ),
@@ -2045,6 +2049,7 @@ export async function saveSendMetaRecord(
       // Si no existe, crear nuevo registro
       const record = {
         conversionData: conversionDataArray,
+        campaignId: campaignId || "",
         messageData: {
           id: messageData.id,
           chatId: messageData.chat_id || messageData.chatId,
