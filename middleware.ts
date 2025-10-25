@@ -3,8 +3,13 @@ import type { NextRequest } from 'next/server';
 
 // Lista de orígenes permitidos
 const allowedOrigins = [
+
   // kommo.paybot.app
-  'https://kommo.paybot.app/',
+  'https://kommo.paybot.app',
+
+  // backs
+  'https://kommo-ai-dashboard.vercel.app',
+  
 
   // landings redirects token/campaigns
   'https://guba-redirect-qhwv.vercel.app', // money maker
