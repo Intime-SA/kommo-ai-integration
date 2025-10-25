@@ -3,7 +3,7 @@ const corsConfig = {
   // URLs permitidas para CORS
   allowedOrigins: [
     // kommo.paybot.app
-    'https://kommo.paybot.app/',
+    'https://kommo.paybot.app',
   
     // landings redirects token/campaigns
     'https://guba-redirect-qhwv.vercel.app', // money maker
