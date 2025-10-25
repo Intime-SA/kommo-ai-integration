@@ -1147,6 +1147,7 @@ export async function POST(request: NextRequest) {
           let settings: SettingsDocument | null = null
           try {
             settings = await getSettingsById(KOMMO_CONFIG.pipelines[0].settings.id || "")
+            console.log("KOMMO_CONFIG.pipelines[0].settings.id:", KOMMO_CONFIG.pipelines[0].settings.id)
           } catch (settingsError) {
             logWebhookError(settingsError, "obteniendo settings")
           }
