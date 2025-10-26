@@ -1,8 +1,7 @@
 import { generateObject } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
-import type { LeadStatus, BotAssignableStatus, AIDecision } from "@/types/kommo"
-import type { ContactContext, SettingsDocument, StatusDocument } from "@/lib/mongodb-services"
+import type { LeadStatus, BotAssignableStatus, AIDecision, ContactContext, SettingsDocument, StatusDocument } from "@/types/kommo"
 import { logAiProcessingError, logAiPromptSent, logAiResponseReceived } from "./logger"
 
 // Schema para validar las decisiones de la IA (excluye "Cargo" por restricción de seguridad)
