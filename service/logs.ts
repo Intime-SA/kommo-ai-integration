@@ -7,7 +7,7 @@ import React from 'react'; // Solo necesario si usas el hook useLogs
 // ===== TIPOS E INTERFACES =====
 
 // Tipos de logs disponibles
-export type LogType = 'received_messages' | 'change_status' | 'bot_actions';
+export type LogType = 'received_messages' | 'change_status' | 'bot_actions' | 'send_meta';
 
 // Interface base para todos los logs
 export interface BaseLogEntry {
@@ -347,6 +347,25 @@ export class LogsService {
   }
 
   /**
+   * Obtener logs de envío a Meta
+   */
+  async getSendMeta(params: Partial<LogsQueryParams> = {}): Promise<{
+    data: LogsResponse | null;
+    headers: LogsResponseHeaders | null;
+    error: string | null;
+  }> {
+    const sendMetaParams: LogsQueryParams = {
+      logType: 'send_meta',
+      limit: 50,
+      sortBy: 'timestamp',
+      sortOrder: 'desc',
+      ...params,
+    };
+
+    return this.makeRequest(sendMetaParams);
+  }
+
+  /**
    * Buscar logs por usuario
    */
   async searchByUserName(userName: string, params: Partial<LogsQueryParams> = {}): Promise<{
@@ -454,6 +473,7 @@ export const getLogsLastHours = (hours: number, params?: Partial<LogsQueryParams
 export const getReceivedMessages = (params?: Partial<LogsQueryParams>) => logsService.getReceivedMessages(params);
 export const getStatusChanges = (params?: Partial<LogsQueryParams>) => logsService.getStatusChanges(params);
 export const getBotActions = (params?: Partial<LogsQueryParams>) => logsService.getBotActions(params);
+export const getSendMeta = (params?: Partial<LogsQueryParams>) => logsService.getSendMeta(params);
 export const searchByUserName = (userName: string, params?: Partial<LogsQueryParams>) => logsService.searchByUserName(userName, params);
 export const searchByContact = (contactId: string, params?: Partial<LogsQueryParams>) => logsService.searchByContact(contactId, params);
 export const searchByLead = (leadId: string, params?: Partial<LogsQueryParams>) => logsService.searchByLead(leadId, params);
@@ -538,6 +558,8 @@ export function getLogTypeInfo(logType: LogType): {
       return { label: 'Cambio Status', color: 'green', icon: '🔄' };
     case 'bot_actions':
       return { label: 'Acción Bot', color: 'orange', icon: '🤖' };
+    case 'send_meta':
+      return { label: 'Envío Meta', color: 'blue', icon: '📤' };
     default:
       return { label: 'Desconocido', color: 'gray', icon: '❓' };
   }

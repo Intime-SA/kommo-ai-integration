@@ -16,7 +16,7 @@ const allowedOrigins = [
   'https://redirect-hernan-2.vercel.app',
   'https://redirect-tee-1.vercel.app',
   'https://guba-redirect.vercel.app', // guba redirect
-/*'http://localhost:3000',  // Frontend típico
+/* 'http://localhost:3000',  // Frontend típico
   'http://127.0.0.1:3000', // Frontend alternativo
   'http://localhost:3001', // Si el backend está en 3001
   'http://127.0.0.1:3001',

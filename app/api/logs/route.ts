@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getConsolidatedLogs,
-  LogsQueryParams,
-  LogsResponse,
-  LogType
 } from '@/lib/mongodb-services';
-import { logOutgoingHttpRequest, logIncomingHttpResponse, logHttpError } from '@/lib/logger';
+import { logIncomingHttpResponse, logHttpError } from '@/lib/logger';
+import { LogsQueryParams, LogsResponse, LogType } from '@/types/kommo';
 
 // Validación de parámetros de consulta
 function validateAndParseParams(request: NextRequest): LogsQueryParams {
@@ -80,22 +78,18 @@ function validateAndParseParams(request: NextRequest): LogsQueryParams {
   if (params.endDate && !isValidDate(params.endDate)) {
     throw new Error('endDate debe ser una fecha válida');
   }
-
   // Validar logType si está presente
-  if (params.logType && !['received_messages', 'change_status', 'bot_actions'].includes(params.logType)) {
-    throw new Error('logType debe ser uno de: received_messages, change_status, bot_actions');
+  if (params.logType && !['received_messages', 'change_status', 'bot_actions', 'send_meta'].includes(params.logType)) {
+    throw new Error('logType debe ser uno de: received_messages, change_status, bot_actions, send_meta');
   }
-
   // Validar changedBy si está presente
   if (params.changedBy && !['bot', 'manual', 'system'].includes(params.changedBy)) {
     throw new Error('changedBy debe ser uno de: bot, manual, system');
   }
-
   // Validar sortBy si está presente
   if (params.sortBy && !['timestamp', 'userName', 'contactId', 'type', 'leadId'].includes(params.sortBy)) {
     throw new Error('sortBy debe ser uno de: timestamp, userName, contactId, type, leadId');
   }
-
   // Validar sortOrder si está presente
   if (params.sortOrder && !['asc', 'desc'].includes(params.sortOrder)) {
     throw new Error('sortOrder debe ser uno de: asc, desc');
