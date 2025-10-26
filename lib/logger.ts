@@ -20,6 +20,13 @@ interface LogContext {
   [key: string]: any
 }
 
+export interface LeadStatusChange {
+  id: string
+  old_status_id: string
+  status_id: string
+  modified_user_id: string
+}
+
 class Logger {
   private currentLevel: LogLevel = LogLevel.INFO
   private isProduction: boolean
@@ -268,12 +275,12 @@ class Logger {
     this.info(`Lead ${leadId} tiene status actual: ${statusName} (ID: ${statusId})`, undefined, { leadId, statusName, statusId })
   }
 
-  leadStatusChange(leadId: string, oldStatusId: string, newStatusId: string, userId: string) {
-    this.info(`🔄 Cambio manual de status del lead ${leadId}`, {
-      from: `Status ID ${oldStatusId}`,
-      to: `Status ID ${newStatusId}`,
-      by: `Usuario ${userId}`
-    }, { leadId, oldStatusId, newStatusId, userId })
+  leadStatusChange(leadStatusChange: LeadStatusChange) {
+    this.info(`🔄 Cambio manual de status del lead ${leadStatusChange.id}`, {
+      from: `Status ID ${leadStatusChange.old_status_id}`,
+      to: `Status ID ${leadStatusChange.status_id}`,
+      by: `Usuario ${leadStatusChange.modified_user_id}`
+    }, { leadStatusChange })
   }
 
   talkUpdate(talkId: string, contactId: string, entityId: string, isInWork: string, isRead: string) {
@@ -446,11 +453,12 @@ export const logKommoApiError = (operation: string, error: any, leadId?: string)
 export const logLeadInfoSuccess = (result: any) => logger.leadInfoSuccess(result)
 export const logLeadStatusNotFound = (leadId: string) => logger.leadStatusNotFound(leadId)
 export const logLeadStatusFound = (leadId: string, statusName: string | null, statusId: string) => logger.leadStatusFound(leadId, statusName, statusId)
-export const logLeadStatusChange = (leadId: string, oldStatusId: string, newStatusId: string, userId: string) => logger.leadStatusChange(leadId, oldStatusId, newStatusId, userId)
+export const logLeadStatusChange = (leadStatusChange: LeadStatusChange) => logger.leadStatusChange(leadStatusChange)
 export const logTalkUpdate = (talkId: string, contactId: string, entityId: string, isInWork: string, isRead: string) => logger.talkUpdate(talkId, contactId, entityId, isInWork, isRead)
 export const logUnsortedAdd = (uid: string, source: string, category: string, leadId?: string, contactId?: string) => logger.unsortedAdd(uid, source, category, leadId, contactId)
 export const logLeadsDelete = (leadId: string, statusId: string, pipelineId: string) => logger.leadsDelete(leadId, statusId, pipelineId)
 export const logUnsortedDelete = (uid: string, action: string, category: string, modifiedUserId: string) => logger.unsortedDelete(uid, action, category, modifiedUserId)
+
 
 // Nuevas funciones de logging para HTTP
 export const logOutgoingHttpRequest = (method: string, url: string, headers?: any, body?: any) => logger.outgoingHttpRequest(method, url, headers, body)

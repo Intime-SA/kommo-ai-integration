@@ -1,8 +1,14 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { STATUS_MAPPING } from "./constants"
-import { KommoApiConfig } from "./kommo-api"
+import { getLeadInfo, KommoApiConfig } from "./kommo-api"
 import { updateLeadStatus } from "./kommo-api"
+import { KOMMO_CONFIG } from "./kommo-config"
+import { NextResponse } from "next/server"
+import { findContactById, findLeadById } from "./mongodb-services"
+import { getContactInfo } from "./kommo-api"
+import { createContactFromKommoApi } from "./mongodb-services"
+import { createLeadFromKommoApi } from "./mongodb-services"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -45,8 +51,6 @@ export function getDateHoursAgo(hours: number): string {
 export function getCurrentDate(): string {
   return new Date().toISOString();
 }
-
-
 
 // Utilidad para convertir fechas al formato ISO string en horario Argentina
 export function convertToArgentinaISO(ts: string | number): string {
@@ -120,4 +124,113 @@ export function extractCodeFromMessage(messageText: string): string | null {
 // Función helper para convertir fecha a UTC (restando 3 horas para Argentina)
 export function convertToUTC(date: Date): Date {
   return new Date(date.getTime() - 3 * 60 * 60 * 1000);
+}
+
+export async function getPipelineIdFromLeadId(tempWebhookData: any): Promise<string | null> {
+  // Primero intentar con leadIds de leads, luego con messageLeadIds de messages
+  const leadIdSource =
+    tempWebhookData.leadIds && tempWebhookData.leadIds.length > 0
+      ? tempWebhookData.leadIds[0]
+      : tempWebhookData.messageLeadIds &&
+        tempWebhookData.messageLeadIds.length > 0
+      ? tempWebhookData.messageLeadIds[0]
+      : null;
+
+  if (leadIdSource) {
+    console.log(
+      `🔍 Pipeline ID no encontrado en webhook, consultando API para lead ${leadIdSource}...`
+    );
+
+    try {
+      const config: KommoApiConfig = {
+        subdomain: KOMMO_CONFIG.subdomain || "",
+      };
+
+      if (!config.subdomain) {
+        console.error(
+          "❌ KOMMO_SUBDOMAIN no configurado para validación de pipeline"
+        );
+        return null;
+      }
+
+      const leadInfo = await getLeadInfo(leadIdSource, config);
+      if (leadInfo && leadInfo.pipeline_id) {
+        return leadInfo.pipeline_id.toString();
+      }
+    } catch (error) {
+      return null;
+    }
+  }
+  return null;
+}
+
+// Función helper para sincronizar lead y contacto desde API de Kommo
+export default async function syncLeadAndContactFromKommoApi(
+  leadId: string,
+  contactId: string
+) {
+  try {
+    const config: KommoApiConfig = {
+      subdomain: KOMMO_CONFIG.subdomain || "",
+    };
+
+    if (!config.subdomain) {
+      console.error("❌ KOMMO_SUBDOMAIN no configurado para sincronización");
+      return;
+    }
+
+    // Verificar si el lead existe localmente
+    const existingLead = await findLeadById(leadId);
+    let leadData = null;
+
+    if (!existingLead) {
+      console.log(
+        `🔄 Lead ${leadId} no existe localmente, obteniendo desde API de Kommo...`
+      );
+      leadData = await getLeadInfo(leadId, config);
+
+      if (leadData) {
+        // Verificar si el contacto existe localmente
+        const existingContact = await findContactById(contactId);
+        let contactData = null;
+
+        if (!existingContact) {
+          console.log(
+            `🔄 Contacto ${contactId} no existe localmente, obteniendo desde API de Kommo...`
+          );
+          contactData = await getContactInfo(contactId, config);
+
+          if (contactData) {
+            // Crear contacto
+            await createContactFromKommoApi(contactData);
+          }
+        }
+
+        // Crear lead
+        await createLeadFromKommoApi(leadData, contactData);
+      }
+    } else {
+      console.log(`✅ Lead ${leadId} ya existe localmente`);
+    }
+
+    // Verificar si el contacto existe (por si acaso)
+    const existingContact = await findContactById(contactId);
+    if (!existingContact) {
+      console.log(
+        `🔄 Contacto ${contactId} no existe localmente, obteniendo desde API de Kommo...`
+      );
+      const contactData = await getContactInfo(contactId, config);
+
+      if (contactData) {
+        await createContactFromKommoApi(contactData);
+      }
+    } else {
+      console.log(`✅ Contacto ${contactId} ya existe localmente`);
+    }
+  } catch (error) {
+    console.error(
+      "❌ Error al sincronizar lead y contacto desde API de Kommo:",
+      error
+    );
+  }
 }
