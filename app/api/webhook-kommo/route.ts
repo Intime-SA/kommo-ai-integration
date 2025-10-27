@@ -93,7 +93,15 @@ export async function POST(request: NextRequest) {
 
     // Validar si el pipeline_id es el correcto
     if (pipelineId && pipelineId !== KOMMO_CONFIG.pipelines[0].id) {
+      console.log(`❌ Pipeline ID no válido: ${pipelineId}. Solo se acepta el pipeline: ${KOMMO_CONFIG.pipelines[0].id}`);
       logPipelineError(pipelineId);
+      return NextResponse.json({
+        success: false,
+        processed: false,
+        message: `Pipeline no válido: ${pipelineId}. Solo se acepta el pipeline: ${KOMMO_CONFIG.pipelines[0].id}`,
+        pipeline_id: pipelineId,
+        expected_pipeline: KOMMO_CONFIG.pipelines[0].id,
+      }, { status: 400 });
     }
 
     //  Parseamos los datos del webhook en objeto
