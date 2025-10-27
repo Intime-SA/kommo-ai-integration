@@ -1,11 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server";
 import type {
+  AIDecision,
   SettingsDocument,
   StatusDocument,
 } from "@/types/kommo";
-import { processMessageWithAI } from "@/lib/ai-processor";
 import { getCurrentLeadStatus } from "@/lib/kommo-api";
-import syncLeadAndContactFromKommoApi, { getPipelineIdFromLeadId, updateLeadStatusByName } from "@/lib/utils";
+import syncLeadAndContactFromKommoApi, {
+  getPipelineIdFromLeadId,
+  updateLeadStatusByName,
+} from "@/lib/utils";
 import {
   logWebhookReceived,
   logWebhookParsed,
@@ -46,11 +49,16 @@ import {
   getAllStatus,
   validateWebhookForProcessing,
   checkExistingMessageText,
+  KommoDatabaseService,
+  createPaymentRequest,
 } from "@/lib/mongodb-services";
 import { getLeadInfo, getContactInfo } from "@/lib/kommo-api";
 import type { KommoApiConfig } from "@/lib/kommo-api";
 import { extractCodeFromMessage } from "@/lib/utils";
-import { parseWebhookFormData, extractWebhookMetadata } from "@/lib/webhook-parser";
+import {
+  parseWebhookFormData,
+  extractWebhookMetadata,
+} from "@/lib/webhook-parser";
 import { KOMMO_CONFIG, META_CONFIG } from "@/lib/kommo-config";
 import { STATUS_MAPPING } from "@/lib/constants";
 import {
@@ -60,7 +68,7 @@ import {
 } from "@/lib/adapters";
 import { logConversionError } from "@/lib/errors/conversion";
 import { logPipelineError } from "@/lib/errors/pipeline";
-
+import { processMessageWithAI } from "@/service/agents";
 
 export async function POST(request: NextRequest) {
   try {
@@ -74,6 +82,14 @@ export async function POST(request: NextRequest) {
 
     // Intentar obtener pipeline_id del webhook
     let pipelineId: string | null = null;
+    let aiDecision: AIDecision = {
+      currentStatus: "sin-status",
+      newStatus: "sin-status",
+      shouldChange: false,
+      reasoning: "",
+      confidence: 0,
+      attachment: null,
+    };
 
     // Validar si el pipeline_id está en el webhook
     if (tempWebhookData.pipelineIds && tempWebhookData.pipelineIds.length > 0) {
@@ -411,7 +427,6 @@ export async function POST(request: NextRequest) {
               const conversionAlreadySent = await isConversionAlreadySent(
                 extractedCode,
                 META_CONFIG.event1
-                
               );
               if (conversionAlreadySent) {
                 console.log(
@@ -668,7 +683,7 @@ export async function POST(request: NextRequest) {
           );
 
           // Process with AI usando el status efectivo, contexto histórico y reglas simplificadas
-          const aiDecision = await processMessageWithAI(
+          aiDecision = await processMessageWithAI(
             message.text,
             effectiveStatus,
             message.talk_id,
@@ -678,6 +693,24 @@ export async function POST(request: NextRequest) {
             statuses,
             message.attachment
           );
+
+          // Crear solicitud de pago si existe attachment
+          if (aiDecision.newStatus === "RevisarImagen") {
+            console.log(`💰 Creando solicitud de pago para attachment: ${message.attachment?.link}`);
+            const paymentRequest = await createPaymentRequest({
+              leadId: message.entity_id,
+              contactId: message.contact_id,
+              talkId: message.talk_id,
+              attachment: {
+                type: message.attachment?.type || "",
+                link: message.attachment?.link as string || "",
+                file_name: message.attachment?.file_name || "",
+              },
+            });
+            console.log("Creada solicitud de pago con id: ", paymentRequest._id);
+          } else {
+            logger.info(`💰 No se creó solicitud de pago para attachment: ${message.attachment?.link}`);
+          }
 
           logAiDecision(aiDecision, message.talk_id, message.entity_id);
 

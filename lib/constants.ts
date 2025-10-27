@@ -8,7 +8,8 @@ export const PIPELINE_CONFIG = {
   
   // Status ID mapping - configured based on your Kommo pipeline
   export const STATUS_MAPPING = {
-    Revisar: KOMMO_CONFIG.pipelines[0].status.Revisar ,
+    Revisar: KOMMO_CONFIG.pipelines[0].status.Revisar,
+    RevisarImagen: KOMMO_CONFIG.pipelines[0].status.RevisarImagen,
     PidioUsuario: KOMMO_CONFIG.pipelines[0].status.PidioUsuario,
     PidioCbuAlias: KOMMO_CONFIG.pipelines[0].status.PidioCbuAlias,
     Cargo: KOMMO_CONFIG.pipelines[0].status.Cargo,
