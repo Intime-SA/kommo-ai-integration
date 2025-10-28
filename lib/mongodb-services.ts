@@ -87,6 +87,8 @@ export interface PaymentRequestDocument {
     confidence?: number;
     [key: string]: any;
   };
+  username?: string;
+  platform?: any;
 }
 
 // Servicios para interactuar con MongoDB
@@ -154,26 +156,27 @@ export class KommoDatabaseService {
     return { ...paymentRequestDocument, _id: result.insertedId.toString() };
   }
 
-  // Servicio para obtener solicitud de pago por leadId
+  // Servicio para obtener solicitud de pago por leadId (solo status pending)
   async getPaymentRequestByLeadId(
     leadId: string
   ): Promise<PaymentRequestDocument | null> {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.requestImages || ""
     );
-
-    console.log(`🔍 Buscando solicitud de pago para leadId: ${leadId}`);
-
+    console.log(`🔍 Buscando solicitud de pago PENDING más reciente para leadId: ${leadId}`);
     const paymentRequest = (await collection.findOne({
       leadId,
+      status: "pending"
+    }, {
+      sort: { createdAt: -1 }
     })) as PaymentRequestDocument | null;
 
     if (paymentRequest) {
       console.log(
-        `✅ Encontrada solicitud de pago con attachment: ${paymentRequest.attachment}`
+        `✅ Encontrada solicitud de pago PENDING con attachment: ${paymentRequest.attachment}`
       );
     } else {
-      console.log(`❌ No se encontró solicitud de pago para leadId: ${leadId}`);
+      console.log(`❌ No se encontró solicitud de pago PENDING para leadId: ${leadId}`);
     }
 
     return paymentRequest;
@@ -207,6 +210,15 @@ export class KommoDatabaseService {
       console.error(`❌ Error actualizando solicitud de pago para leadId: ${leadId}`, error);
       throw error;
     }
+  }
+
+  async updatePaymentById(id: string, updateData: Partial<PaymentRequestDocument>): Promise<boolean> {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.requestImages || ""
+    );
+    console.log(`🔄 Actualizando solicitud de pago por id: ${id}`);
+    const result = await collection.updateOne({ _id: new ObjectId(id) }, { $set: updateData });
+    return result.matchedCount > 0;
   }
 
   // Servicio para crear usuario
