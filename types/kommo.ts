@@ -322,10 +322,11 @@ export interface KommoWebhookData {
     }
   }
   
-  export type LeadStatus = "Revisar" | "PidioUsuario" | "PidioCbuAlias" | "Cargo" | "NoCargo" | "NoAtender" | "Seguimiento" | "Ganado" | "Perdido" | "sin-status"
+  // Tipos para los status de los leads
+  export type LeadStatus = "Revisar" | "PidioUsuario" | "PidioCbuAlias" | "Cargo" | "RevisarImagen" | "NoCargo" | "NoAtender" | "Seguimiento" | "Ganado" | "Perdido" | "sin-status"
   
   // Status que el bot puede asignar como nuevos (excluye "Cargo" por restricción de seguridad)
-  export type BotAssignableStatus = "Revisar" | "PidioUsuario" | "PidioCbuAlias" | "NoCargo" | "NoAtender" | "sin-status"
+  export type BotAssignableStatus = "Revisar" | "PidioUsuario" | "PidioCbuAlias" | "RevisarImagen" | "NoCargo" | "NoAtender" | "sin-status"
   
   export interface AIDecision {
     currentStatus: LeadStatus
@@ -333,6 +334,7 @@ export interface KommoWebhookData {
     shouldChange: boolean
     reasoning: string
     confidence: number
+    attachment?: any
   }
   
   export interface ProcessedMessage {

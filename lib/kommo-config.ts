@@ -24,6 +24,7 @@ export const KOMMO_CONFIG = {
         Revisar: process.env.KOMMO_STATUS_REVISAR,
         PidioUsuario: process.env.KOMMO_STATUS_PIDIO_USUARIO,
         PidioCbuAlias: process.env.KOMMO_STATUS_PIDIO_CBU_ALIAS,
+        RevisarImagen: process.env.KOMMO_STATUS_REVISAR_IMAGEN,
         Cargo: process.env.KOMMO_STATUS_CARGO,
         NoCargo: process.env.KOMMO_STATUS_NO_CARGO,
         NoAtender: process.env.KOMMO_STATUS_NO_ATENDER,
@@ -62,6 +63,8 @@ export const MONGO_CONFIG = {
     settings: process.env.MONGODB_COLLECTION_SETTINGS,
     status: process.env.MONGODB_COLLECTION_STATUS,
     tokenVisit: process.env.MONGODB_COLLECTION_TOKEN_VISIT,
+    requestImages: process.env.MONGODB_COLLECTION_REQUEST_IMAGE,
+    registers: process.env.MONGODB_COLLECTION_REGISTERS,
   },
 };
 

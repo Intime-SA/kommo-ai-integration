@@ -7,11 +7,89 @@ import {
   logWelcomeBotError,
   logger,
 } from "./logger";
-import { KOMMO_CONFIG, META_CONFIG, MONGO_CONFIG } from "./kommo-config";
-import { BotActionLog, ChangeStatusLog, LogEntry, LogsQueryParams, LogsResponse, ReceivedMessageLog, RuleDocument, RulesQueryParams, RulesResponse, SendMetaLog, UserDocument, LeadDocument, TaskDocument, MessageDocument, BotActionDocument, TokenVisitDocument, ContactContext, StatusDocument, SettingsDocument } from "@/types/kommo";
-import { convertToArgentinaISO, convertToUTC, getCurrentArgentinaISO, getCurrentDate, getDateHoursAgo } from "./utils";
+import { META_CONFIG, MONGO_CONFIG } from "./kommo-config";
+import {
+  BotActionLog,
+  ChangeStatusLog,
+  LogEntry,
+  LogsQueryParams,
+  LogsResponse,
+  ReceivedMessageLog,
+  RuleDocument,
+  RulesQueryParams,
+  RulesResponse,
+  SendMetaLog,
+  UserDocument,
+  LeadDocument,
+  TaskDocument,
+  MessageDocument,
+  BotActionDocument,
+  TokenVisitDocument,
+  ContactContext,
+  StatusDocument,
+  SettingsDocument,
+} from "@/types/kommo";
+import {
+  convertToArgentinaISO,
+  convertToUTC,
+  getCurrentArgentinaISO,
+  getCurrentDate,
+  getDateHoursAgo,
+} from "./utils";
 
-
+export interface PaymentRequestDocument {
+  _id?: string;
+  leadId: string;
+  contactId: string;
+  talkId: string;
+  attachment: {
+    type: string;
+    link: string;
+    file_name: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  status: "pending" | "processed" | "error";
+  receipt?: {
+    url: string;
+    name: string;
+  };
+  gptAnalysis?: {
+    success: boolean;
+    extractedAt: string;
+    partial: boolean;
+    note?: string;
+    confidence?: number;
+  };
+  extractedData?: {
+    amount?: number;
+    currency?: string;
+    date?: string;
+    time?: string;
+    sender?: {
+      name: string;
+      cuit: string;
+      platform: string;
+      cvu: string;
+      cbu: string;
+    };
+    receiver?: {
+      name: string;
+      cuit: string;
+      cvu: string;
+      cbu: string;
+      bank?: string;
+    };
+    operationNumber?: string;
+    transactionType?: string;
+    platform?: string;
+    rawText?: string;
+    confidence?: number;
+    [key: string]: any;
+  };
+  username?: string;
+  platform?: any;
+}
 
 // Servicios para interactuar con MongoDB
 export class KommoDatabaseService {
@@ -42,6 +120,107 @@ export class KommoDatabaseService {
     return db.collection(collectionName);
   }
 
+  // servicio para crear solicitud de pago
+  async createPaymentRequest(data: {
+    leadId: string;
+    contactId: string;
+    talkId: string;
+    attachment: {
+      type: string;
+      link: string;
+      file_name: string;
+    };
+  }): Promise<PaymentRequestDocument> {
+    // Verificar si ya existe una solicitud de pago para este lead y contacto
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.requestImages || ""
+    );
+
+    // Verificar si ya existe una solicitud de pago para este lead y contacto
+    console.log(
+      `💰 Creando solicitud de pago para attachment: ${data.attachment}`
+    );
+
+    const paymentRequestDocument: PaymentRequestDocument = {
+      talkId: data.talkId,
+      leadId: data.leadId,
+      contactId: data.contactId,
+      attachment: data.attachment,
+      createdAt: getCurrentArgentinaISO(),
+      updatedAt: getCurrentArgentinaISO(),
+      status: "pending",
+    };
+
+    const { _id, ...paymentRequestData } = paymentRequestDocument;
+    const result = await collection.insertOne(paymentRequestData);
+    return { ...paymentRequestDocument, _id: result.insertedId.toString() };
+  }
+
+  // Servicio para obtener solicitud de pago por leadId (solo status pending)
+  async getPaymentRequestByLeadId(
+    leadId: string
+  ): Promise<PaymentRequestDocument | null> {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.requestImages || ""
+    );
+    console.log(`🔍 Buscando solicitud de pago PENDING más reciente para leadId: ${leadId}`);
+    const paymentRequest = (await collection.findOne({
+      leadId,
+      status: "pending"
+    }, {
+      sort: { createdAt: -1 }
+    })) as PaymentRequestDocument | null;
+
+    if (paymentRequest) {
+      console.log(
+        `✅ Encontrada solicitud de pago PENDING con attachment: ${paymentRequest.attachment}`
+      );
+    } else {
+      console.log(`❌ No se encontró solicitud de pago PENDING para leadId: ${leadId}`);
+    }
+
+    return paymentRequest;
+  }
+
+  // Servicio para actualizar solicitud de pago por leadId
+  async updatePaymentRequestByLeadId(
+    leadId: string,
+    updateData: Partial<PaymentRequestDocument>
+  ): Promise<boolean> {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.requestImages || ""
+    );
+
+    console.log(`🔄 Actualizando solicitud de pago para leadId: ${leadId}`);
+
+    try {
+      const result = await collection.updateOne(
+        { leadId },
+        { $set: updateData }
+      );
+
+      if (result.matchedCount > 0) {
+        console.log(`✅ Solicitud de pago actualizada exitosamente para leadId: ${leadId}`);
+        return true;
+      } else {
+        console.log(`❌ No se encontró solicitud de pago para actualizar leadId: ${leadId}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ Error actualizando solicitud de pago para leadId: ${leadId}`, error);
+      throw error;
+    }
+  }
+
+  async updatePaymentById(id: string, updateData: Partial<PaymentRequestDocument>): Promise<boolean> {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.requestImages || ""
+    );
+    console.log(`🔄 Actualizando solicitud de pago por id: ${id}`);
+    const result = await collection.updateOne({ _id: new ObjectId(id) }, { $set: updateData });
+    return result.matchedCount > 0;
+  }
+
   // Servicio para crear usuario
   async createUser(data: {
     sourceUid: string;
@@ -52,7 +231,9 @@ export class KommoDatabaseService {
     sourceName: string;
     messageText: string;
   }): Promise<UserDocument> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.users || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.users || ""
+    );
 
     // Verificar si ya existe un usuario con este client.id
     const existingUser = await collection.findOne({ clientId: data.client.id });
@@ -109,7 +290,9 @@ export class KommoDatabaseService {
     messageText: string;
     sourceName: string;
   }): Promise<LeadDocument> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.leads || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.leads || ""
+    );
 
     // Verificar si ya existe un lead con este uid
     const existingLead = await collection.findOne({ uid: data.uid });
@@ -167,7 +350,9 @@ export class KommoDatabaseService {
     isRead: string;
     createdAt: string | number;
   }): Promise<TaskDocument> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.tasks || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.tasks || ""
+    );
 
     // Verificar si ya existe una task con este talkId
     const existingTask = await collection.findOne({ talkId: data.talkId });
@@ -218,7 +403,9 @@ export class KommoDatabaseService {
     isRead: string;
     updatedAt: string | number;
   }): Promise<TaskDocument> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.tasks || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.tasks || ""
+    );
 
     const updateData: Partial<TaskDocument> = {
       contactId: data.contactId,
@@ -268,7 +455,9 @@ export class KommoDatabaseService {
       file_name: string;
     };
   }): Promise<MessageDocument> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.messages || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.messages || ""
+    );
 
     // Verificar si ya existe un mensaje con este id
     const existingMessage = await collection.findOne({ text: data.text });
@@ -337,7 +526,9 @@ export class KommoDatabaseService {
       error?: string;
     };
   }): Promise<BotActionDocument> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.botActions || ""
+    );
 
     // Crear nuevo registro de acción del bot
     const botActionDocument: BotActionDocument = {
@@ -363,14 +554,20 @@ export class KommoDatabaseService {
     token: string;
     lead: any;
   }): Promise<TokenVisitDocument> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.tokenVisit || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.tokenVisit || ""
+    );
 
     const settings = await this.getAllSettings();
 
     // Seleccionar número de redireccionamiento de forma rotativa
     let redirectNumber: { name: string; phone: string } | undefined;
 
-    if (settings.length > 0 && settings[0].numbers && settings[0].numbers.length > 0) {
+    if (
+      settings.length > 0 &&
+      settings[0].numbers &&
+      settings[0].numbers.length > 0
+    ) {
       const availableNumbers = settings[0].numbers;
 
       // Algoritmo simple de round-robin basado en minutos del timestamp actual
@@ -380,9 +577,13 @@ export class KommoDatabaseService {
       const selectedIndex = currentMinutes % availableNumbers.length;
 
       redirectNumber = availableNumbers[selectedIndex];
-      console.log(`🔄 Número seleccionado para redireccionamiento: ${redirectNumber.name} (${redirectNumber.phone})`);
+      console.log(
+        `🔄 Número seleccionado para redireccionamiento: ${redirectNumber.name} (${redirectNumber.phone})`
+      );
     } else {
-      console.log("⚠️ No hay números disponibles en settings para redireccionamiento");
+      console.log(
+        "⚠️ No hay números disponibles en settings para redireccionamiento"
+      );
     }
 
     // Crear nuevo registro de token visit
@@ -397,15 +598,26 @@ export class KommoDatabaseService {
 
     const { _id, ...tokenVisitData } = tokenVisitDocument;
     const result = await collection.insertOne(tokenVisitData);
-    return { ...tokenVisitDocument, _id: result.insertedId.toString(), redirectNumber: redirectNumber, message: settings[0].message };
+    return {
+      ...tokenVisitDocument,
+      _id: result.insertedId.toString(),
+      redirectNumber: redirectNumber,
+      message: settings[0].message,
+    };
   }
 
   // Servicio para buscar token por valor
   async findTokenVisit(token: string): Promise<TokenVisitDocument | null> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.tokenVisit || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.tokenVisit || ""
+    );
     const result = await collection.findOne({ token });
     return result
-      ? ({ ...result, _id: result._id.toString(), message: result.message } as TokenVisitDocument)
+      ? ({
+          ...result,
+          _id: result._id.toString(),
+          message: result.message,
+        } as TokenVisitDocument)
       : null;
   }
 
@@ -461,7 +673,7 @@ export class KommoDatabaseService {
 
       // Acciones del bot recientes
       db
-          .collection(MONGO_CONFIG.collection.botActions || "")
+        .collection(MONGO_CONFIG.collection.botActions || "")
         .find({
           contactId,
           createdAt: { $gte: twentyFourHoursAgo.toISOString() },
@@ -570,7 +782,9 @@ export class KommoDatabaseService {
   async getReceivedMessagesLogs(
     params: LogsQueryParams
   ): Promise<{ logs: ReceivedMessageLog[]; total: number }> {
-      const collection = await this.getCollection(MONGO_CONFIG.collection.messages || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.messages || ""
+    );
 
     // Construir pipeline de agregación para messages
     const pipeline: any[] = [];
@@ -713,7 +927,9 @@ export class KommoDatabaseService {
   async getChangeStatusLogs(
     params: LogsQueryParams
   ): Promise<{ logs: ChangeStatusLog[]; total: number }> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.botActions || ""
+    );
 
     // Construir pipeline de agregación
     const pipeline: any[] = [];
@@ -850,7 +1066,9 @@ export class KommoDatabaseService {
   async getBotActionsLogs(
     params: LogsQueryParams
   ): Promise<{ logs: BotActionLog[]; total: number }> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.botActions || ""
+    );
 
     // Construir pipeline de agregación
     const pipeline: any[] = [];
@@ -997,7 +1215,9 @@ export class KommoDatabaseService {
   async getSendMetaLogs(
     params: LogsQueryParams
   ): Promise<{ logs: SendMetaLog[]; total: number }> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.sendMeta || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.sendMeta || ""
+    );
 
     // Construir filtros para consulta directa
     const query: any = {};
@@ -1018,7 +1238,10 @@ export class KommoDatabaseService {
       query["messageData.elementId"] = params.leadId; // leadId se guarda en elementId
     }
     if (params.userName) {
-      query["messageData.author.name"] = { $regex: params.userName, $options: "i" };
+      query["messageData.author.name"] = {
+        $regex: params.userName,
+        $options: "i",
+      };
     }
 
     // Filtro por searchTerm (busca en contactId, leadId, author.name o extractedCode)
@@ -1068,7 +1291,10 @@ export class KommoDatabaseService {
     return {
       logs: logs.map((log, index) => ({
         id: log._id.toString(),
-        timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : log.timestamp,
+        timestamp:
+          log.timestamp instanceof Date
+            ? log.timestamp.toISOString()
+            : log.timestamp,
         type: "send_meta" as const,
         contactId: log.messageData?.contactId || "",
         leadId: log.messageData?.elementId || "",
@@ -1307,7 +1533,9 @@ export class KommoDatabaseService {
     contactId: string,
     messageText: string
   ): Promise<boolean> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.botActions || ""
+    );
 
     // Calcular la fecha límite (30 minutos atrás)
     const thirtyMinutesAgo = new Date();
@@ -1336,10 +1564,10 @@ export class KommoDatabaseService {
     shouldProcess: boolean;
     reason?: string;
     duplicateInfo?: {
-      type: 'message' | 'event' | 'status_change';
+      type: "message" | "event" | "status_change";
       lastProcessedAt?: string;
       existingActionId?: string;
-    }
+    };
   }> {
     try {
       // 1. Validar si el mensaje ya fue procesado por IA
@@ -1351,7 +1579,9 @@ export class KommoDatabaseService {
       );
 
       if (messageAlreadyProcessed) {
-        const botActionsCollection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
+        const botActionsCollection = await this.getCollection(
+          MONGO_CONFIG.collection.botActions || ""
+        );
         const existingAction = await botActionsCollection.findOne({
           talkId: talkId,
           entityId: entityId,
@@ -1359,23 +1589,29 @@ export class KommoDatabaseService {
           messageText: messageText,
         });
 
-        logger.info('Mensaje ya procesado por IA en los últimos 30 minutos', existingAction);
+        logger.info(
+          "Mensaje ya procesado por IA en los últimos 30 minutos",
+          existingAction
+        );
 
         return {
           shouldProcess: false,
           reason: "Mensaje ya procesado por IA en los últimos 30 minutos",
           duplicateInfo: {
-            type: 'message',
+            type: "message",
             lastProcessedAt: existingAction?.createdAt,
-            existingActionId: existingAction?._id?.toString()
-          }
+            existingActionId: existingAction?._id?.toString(),
+          },
         };
       }
 
       // 2. Validar eventos duplicados (solo para mensajes entrantes)
-      if (messageType === 'incoming' || elementType === 'message') {
+      if (messageType === "incoming" || elementType === "message") {
         // Verificar si hay eventos de cambio de status recientes para el mismo lead
-        const recentStatusChanges = await this.getRecentStatusChanges(entityId, 10); // últimos 10 minutos
+        const recentStatusChanges = await this.getRecentStatusChanges(
+          entityId,
+          10
+        ); // últimos 10 minutos
 
         if (recentStatusChanges.length > 0) {
           // Verificar si el mensaje podría ser un trigger duplicado para cambio de status
@@ -1383,11 +1619,18 @@ export class KommoDatabaseService {
 
           // Palabras clave que podrían indicar un cambio de status reciente
           const statusChangeKeywords = [
-            'cambio', 'status', 'estado', 'actualización', 'modificación',
-            'change', 'update', 'status', 'modified'
+            "cambio",
+            "status",
+            "estado",
+            "actualización",
+            "modificación",
+            "change",
+            "update",
+            "status",
+            "modified",
           ];
 
-          const mightBeStatusChange = statusChangeKeywords.some(keyword =>
+          const mightBeStatusChange = statusChangeKeywords.some((keyword) =>
             normalizedMessage.includes(keyword)
           );
 
@@ -1396,21 +1639,25 @@ export class KommoDatabaseService {
               shouldProcess: false,
               reason: "Posible evento duplicado de cambio de status detectado",
               duplicateInfo: {
-                type: 'status_change',
-                lastProcessedAt: recentStatusChanges[0].createdAt
-              }
+                type: "status_change",
+                lastProcessedAt: recentStatusChanges[0].createdAt,
+              },
             };
           }
         }
       }
 
       // 3. Validar frecuencia de mensajes del mismo contacto (anti-spam)
-      const recentMessages = await this.getRecentMessagesFromContact(contactId, 5); // últimos 5 minutos
+      const recentMessages = await this.getRecentMessagesFromContact(
+        contactId,
+        5
+      ); // últimos 5 minutos
 
       if (recentMessages.length >= 5) {
         // Si hay 5+ mensajes en 5 minutos, podría ser spam o duplicado
-        const similarMessages = recentMessages.filter(msg =>
-          msg.text.trim().toLowerCase() === messageText.trim().toLowerCase()
+        const similarMessages = recentMessages.filter(
+          (msg) =>
+            msg.text.trim().toLowerCase() === messageText.trim().toLowerCase()
         );
 
         if (similarMessages.length >= 2) {
@@ -1418,15 +1665,14 @@ export class KommoDatabaseService {
             shouldProcess: false,
             reason: "Múltiples mensajes idénticos detectados (posible spam)",
             duplicateInfo: {
-              type: 'event',
-              lastProcessedAt: similarMessages[0].createdAt
-            }
+              type: "event",
+              lastProcessedAt: similarMessages[0].createdAt,
+            },
           };
         }
       }
 
       return { shouldProcess: true };
-
     } catch (error) {
       // En caso de error en la validación, permitir el procesamiento para evitar bloquear mensajes legítimos
       console.warn("Error en validación de webhook duplicado:", error);
@@ -1435,41 +1681,58 @@ export class KommoDatabaseService {
   }
 
   // Helper: Obtener cambios de status recientes para un lead
-  private async getRecentStatusChanges(entityId: string, minutesAgo: number = 10) {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.botActions || "");
+  private async getRecentStatusChanges(
+    entityId: string,
+    minutesAgo: number = 10
+  ) {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.botActions || ""
+    );
 
     const timeAgo = new Date();
     timeAgo.setMinutes(timeAgo.getMinutes() - minutesAgo);
 
-    const statusChanges = await collection.find({
-      entityId: entityId,
-      "aiDecision.shouldChange": true,
-      createdAt: { $gte: timeAgo.toISOString() }
-    }).sort({ createdAt: -1 }).limit(5).toArray();
+    const statusChanges = await collection
+      .find({
+        entityId: entityId,
+        "aiDecision.shouldChange": true,
+        createdAt: { $gte: timeAgo.toISOString() },
+      })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .toArray();
 
-    return statusChanges.map(change => ({
+    return statusChanges.map((change) => ({
       createdAt: change.createdAt,
       oldStatus: change.aiDecision.currentStatus,
-      newStatus: change.aiDecision.newStatus
+      newStatus: change.aiDecision.newStatus,
     }));
   }
 
   // Helper: Obtener mensajes recientes de un contacto
-  private async getRecentMessagesFromContact(contactId: string, minutesAgo: number = 5) {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.messages || "");
+  private async getRecentMessagesFromContact(
+    contactId: string,
+    minutesAgo: number = 5
+  ) {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.messages || ""
+    );
 
     const timeAgo = new Date();
     timeAgo.setMinutes(timeAgo.getMinutes() - minutesAgo);
 
-    const messages = await collection.find({
-      contactId: contactId,
-      createdAt: { $gte: timeAgo.toISOString() }
-    }).sort({ createdAt: -1 }).toArray();
+    const messages = await collection
+      .find({
+        contactId: contactId,
+        createdAt: { $gte: timeAgo.toISOString() },
+      })
+      .sort({ createdAt: -1 })
+      .toArray();
 
-    return messages.map(msg => ({
+    return messages.map((msg) => ({
       text: msg.text,
       createdAt: msg.createdAt,
-      id: msg.id
+      id: msg.id,
     }));
   }
 
@@ -1478,7 +1741,9 @@ export class KommoDatabaseService {
     extractedCode: string,
     eventName: string
   ): Promise<boolean> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.sendMeta || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.sendMeta || ""
+    );
 
     // Calcular la fecha límite (30 minutos atrás)
     const thirtyMinutesAgo = new Date();
@@ -1519,7 +1784,9 @@ export class KommoDatabaseService {
   async createStatus(
     data: Omit<StatusDocument, "_id" | "createdAt" | "updatedAt" | "kommo_id">
   ): Promise<StatusDocument> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.status || ""
+    );
 
     // Verificar si ya existe un status con este statusId
     const existingStatus = await collection.findOne({
@@ -1555,7 +1822,9 @@ export class KommoDatabaseService {
    * Obtener todos los documentos de status
    */
   async getAllStatus(): Promise<StatusDocument[]> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.status || ""
+    );
     const status = await collection.find({}).sort({ createdAt: -1 }).toArray();
 
     return status.map((status) => ({
@@ -1574,7 +1843,9 @@ export class KommoDatabaseService {
    * Obtener un documento de status por ID
    */
   async getStatusById(id: string): Promise<StatusDocument | null> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.status || ""
+    );
     const status = await collection.findOne({ _id: new ObjectId(id) });
 
     if (!status) return null;
@@ -1595,7 +1866,9 @@ export class KommoDatabaseService {
    * Obtener un documento de status por statusId
    */
   async getStatusByStatusId(statusId: string): Promise<StatusDocument | null> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.status || ""
+    );
     const status = await collection.findOne({ statusId });
 
     if (!status) return null;
@@ -1619,7 +1892,9 @@ export class KommoDatabaseService {
     id: string,
     updateData: Partial<Omit<StatusDocument, "_id" | "createdAt">>
   ): Promise<StatusDocument | null> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.status || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.status || ""
+    );
 
     // Validar color si está presente en los datos de actualización
     if (updateData.color && !this.isValidHexColor(updateData.color)) {
@@ -1677,7 +1952,9 @@ export class KommoDatabaseService {
    * Obtener todos los documentos de settings
    */
   async getAllSettings(): Promise<SettingsDocument[]> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.settings || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.settings || ""
+    );
     const settings = await collection.find({}).toArray();
 
     return settings.map((setting) => ({
@@ -1704,7 +1981,7 @@ export class KommoDatabaseService {
       console.log(`📁 Colección obtenida: settings`);
 
       const setting = await collection.findOne({ _id: new ObjectId(id) });
-      console.log(`📊 Documento encontrado:`, setting ? 'Sí' : 'No');
+      console.log(`📊 Documento encontrado:`, setting ? "Sí" : "No");
 
       if (!setting) return null;
 
@@ -1718,7 +1995,6 @@ export class KommoDatabaseService {
         accountName: setting.accountName,
         numbers: setting.numbers,
       } as SettingsDocument;
-
     } catch (error) {
       console.error(`❌ Error en getSettingsById:`, error);
       throw error;
@@ -1732,7 +2008,9 @@ export class KommoDatabaseService {
     id: string,
     updateData: Partial<Omit<SettingsDocument, "_id">>
   ): Promise<SettingsDocument | null> {
-    const collection = await this.getCollection(MONGO_CONFIG.collection.settings || "");
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.settings || ""
+    );
 
     const updateDoc = {
       ...updateData,
@@ -1766,6 +2044,10 @@ export class KommoDatabaseService {
 
 // Instancia singleton del servicio
 export const kommoDatabaseService = KommoDatabaseService.getInstance();
+
+export const createPaymentRequest = (
+  data: Parameters<KommoDatabaseService["createPaymentRequest"]>[0]
+) => kommoDatabaseService.createPaymentRequest(data);
 
 // Funciones de conveniencia para usar los servicios
 export const createUser = (
@@ -1834,7 +2116,6 @@ export const isConversionAlreadySent = (
   eventName: string
 ) => kommoDatabaseService.isConversionAlreadySent(extractedCode, eventName);
 
-
 // Función para enviar conversión a Meta API
 export async function sendConversionToMeta(
   leadData: any,
@@ -1855,7 +2136,8 @@ export async function sendConversionToMeta(
           event_time: Math.floor(Date.now() / 1000),
           action_source: "website",
           event_source_url:
-            leadData.eventSourceUrl || "https://kommo-ai-integration.vercel.app",
+            leadData.eventSourceUrl ||
+            "https://kommo-ai-integration.vercel.app",
           user_data: {
             client_ip_address: leadData.ip ? leadData.ip : undefined,
             client_user_agent: leadData.userAgent
@@ -1949,7 +2231,6 @@ export async function saveSendMetaRecord(
   campaignId?: string
 ) {
   try {
-
     const client = await clientPromise;
     const db = client.db(MONGO_CONFIG.database || "");
     const collection = db.collection(MONGO_CONFIG.collection.sendMeta || "");
@@ -2018,18 +2299,18 @@ export async function saveSendMetaRecord(
 
       logger.info(`✅ Registro actualizado en send_meta: ${result}`);
 
-
       // Actualizar el lead correspondiente con meta_data actualizada
       if (messageData?.entityId || existingRecord.messageData?.entityId) {
         const entityId =
           messageData?.entityId || existingRecord.messageData?.entityId;
-        const leadsCollection = db.collection(MONGO_CONFIG.collection.leads || "");
+        const leadsCollection = db.collection(
+          MONGO_CONFIG.collection.leads || ""
+        );
 
         // Obtener el registro actualizado para guardar en meta_data
         const updatedRecord = await collection.findOne({
           extractedCode: extractedCode,
         });
-
 
         const updateResult = await leadsCollection.updateOne(
           { leadId: entityId },
@@ -2042,7 +2323,6 @@ export async function saveSendMetaRecord(
         );
 
         logger.info(`✅ Update result: ${updateResult}`);
-
       }
       return { success: true, updatedId: existingRecord._id };
     } else {
@@ -2074,7 +2354,9 @@ export async function saveSendMetaRecord(
 
       // Actualizar el lead correspondiente agregando meta_data
       if (record.messageData.entityId) {
-        const leadsCollection = db.collection(MONGO_CONFIG.collection.leads || "");
+        const leadsCollection = db.collection(
+          MONGO_CONFIG.collection.leads || ""
+        );
         const updateResult = await leadsCollection.updateOne(
           { leadId: record.messageData.entityId },
           {
@@ -2082,7 +2364,7 @@ export async function saveSendMetaRecord(
               meta_data: record,
               updatedAt: utcTimestamp,
             },
-          }   
+          }
         );
         logger.info(`✅ Update result: ${updateResult}`);
       }
@@ -2134,12 +2416,15 @@ export async function findSendMetaByLeadId(leadId: string) {
     const collection = db.collection(MONGO_CONFIG.collection.sendMeta || "");
 
     const record = await collection.findOne({
-      "messageData.entityId": leadId
+      "messageData.entityId": leadId,
     });
 
     return record;
   } catch (error) {
-    console.error("❌ Error al buscar registro en send_meta por leadId:", error);
+    console.error(
+      "❌ Error al buscar registro en send_meta por leadId:",
+      error
+    );
     return null;
   }
 }
@@ -2305,13 +2590,14 @@ export const getSendMetaLogs = (params: LogsQueryParams) =>
 export const getConsolidatedLogs = (params: LogsQueryParams) =>
   kommoDatabaseService.getConsolidatedLogs(params);
 
-
 export async function createRule(
   ruleData: Omit<RuleDocument, "_id" | "createdAt" | "updatedAt">
 ): Promise<RuleDocument> {
   const client = await clientPromise;
   const db = client.db(MONGO_CONFIG.database || "");
-  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
+  const collection = db.collection<RuleDocument>(
+    MONGO_CONFIG.collection.rules || ""
+  );
 
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
   const ruleDocument: Omit<RuleDocument, "_id"> = {
@@ -2390,7 +2676,9 @@ export async function getRules(
 export async function getRuleById(id: string): Promise<RuleDocument | null> {
   const client = await clientPromise;
   const db = client.db(MONGO_CONFIG.database || "");
-  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
+  const collection = db.collection<RuleDocument>(
+    MONGO_CONFIG.collection.rules || ""
+  );
 
   try {
     const rule = await collection.findOne({ _id: new ObjectId(id) });
@@ -2408,7 +2696,9 @@ export async function getRuleByRuleNumber(
 ): Promise<RuleDocument | null> {
   const client = await clientPromise;
   const db = client.db(MONGO_CONFIG.database || "");
-  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
+  const collection = db.collection<RuleDocument>(
+    MONGO_CONFIG.collection.rules || ""
+  );
 
   return await collection.findOne({ rule: ruleNumber });
 }
@@ -2422,7 +2712,9 @@ export async function updateRule(
 ): Promise<RuleDocument | null> {
   const client = await clientPromise;
   const db = client.db(MONGO_CONFIG.database || "");
-  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
+  const collection = db.collection<RuleDocument>(
+    MONGO_CONFIG.collection.rules || ""
+  );
 
   const updateDoc = {
     ...updateData,
@@ -2441,14 +2733,15 @@ export async function updateRule(
   }
 }
 
-
 export async function updateRuleByRuleNumber(
   ruleNumber: string,
   updateData: Partial<Omit<RuleDocument, "_id" | "createdAt">>
 ): Promise<RuleDocument | null> {
   const client = await clientPromise;
   const db = client.db(MONGO_CONFIG.database || "");
-  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
+  const collection = db.collection<RuleDocument>(
+    MONGO_CONFIG.collection.rules || ""
+  );
 
   const updateDoc = {
     ...updateData,
@@ -2470,7 +2763,9 @@ export async function updateRuleByRuleNumber(
 export async function deleteRule(id: string): Promise<boolean> {
   const client = await clientPromise;
   const db = client.db(MONGO_CONFIG.database || "");
-  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
+  const collection = db.collection<RuleDocument>(
+    MONGO_CONFIG.collection.rules || ""
+  );
 
   try {
     const result = await collection.deleteOne({ _id: new ObjectId(id) });
@@ -2488,7 +2783,9 @@ export async function deleteRuleByRuleNumber(
 ): Promise<boolean> {
   const client = await clientPromise;
   const db = client.db(MONGO_CONFIG.database || "");
-  const collection = db.collection<RuleDocument>(MONGO_CONFIG.collection.rules || "");
+  const collection = db.collection<RuleDocument>(
+    MONGO_CONFIG.collection.rules || ""
+  );
 
   const result = await collection.deleteOne({ rule: ruleNumber });
   return result.deletedCount > 0;
@@ -2563,10 +2860,14 @@ export async function getActiveRulesForAI(
   return normalizeRulesForAI(response.rules);
 }
 
-export async function checkExistingProcessingTimestamp(processingTimestamp: string): Promise<boolean> {
+export async function checkExistingProcessingTimestamp(
+  processingTimestamp: string
+): Promise<boolean> {
   try {
     const db = await clientPromise;
-    const collection = db.db(MONGO_CONFIG.database || "").collection<BotActionDocument>(MONGO_CONFIG.collection.botActions || "");
+    const collection = db
+      .db(MONGO_CONFIG.database || "")
+      .collection<BotActionDocument>(MONGO_CONFIG.collection.botActions || "");
 
     // Convertir el timestamp a Date
     const targetTime = new Date(processingTimestamp);
@@ -2585,8 +2886,8 @@ export async function checkExistingProcessingTimestamp(processingTimestamp: stri
     const existingAction = await collection.findOne({
       processingTimestamp: {
         $gte: thirtyMinutesBefore.toISOString(),
-        $lte: threeHoursAfter.toISOString()
-      }
+        $lte: threeHoursAfter.toISOString(),
+      },
     });
     console.log("existingAction", existingAction);
 
@@ -2699,23 +3000,33 @@ export async function detectAndLaunchWelcomeBot(
  * @param processingTimestamp El timestamp de procesamiento para calcular el rango de ±24 horas
  * @returns true si el mensaje ya fue procesado, false en caso contrario
  */
-export async function checkExistingMessageText(messageText: string, entityId: string, processingTimestamp: string): Promise<boolean> {
+export async function checkExistingMessageText(
+  messageText: string,
+  entityId: string,
+  processingTimestamp: string
+): Promise<boolean> {
   try {
     const db = await clientPromise;
-    const collection = db.db(MONGO_CONFIG.database).collection<BotActionDocument>(MONGO_CONFIG.collection.botActions || "");
+    const collection = db
+      .db(MONGO_CONFIG.database)
+      .collection<BotActionDocument>(MONGO_CONFIG.collection.botActions || "");
 
     // Normalizar el mensaje para comparación (trim y lowercase) - consistente con cómo se guarda
     const normalizedMessage = messageText.trim().toLowerCase();
 
     // Calcular el rango de tiempo: ±24 horas alrededor del processingTimestamp
     const processingDate = convertToArgentinaISO(processingTimestamp);
-      logger.info("processingDate", processingDate);
-      const startDate = new Date(new Date(processingDate).getTime() - 24 * 60 * 60 * 1000);
-      logger.info("startDate", startDate);
-      // 24 horas atrás
-      const endDate = new Date(new Date(processingDate).getTime() + 24 * 60 * 60 * 1000);   // 24 horas adelante
-      logger.info("endDate", endDate);
-    
+    logger.info("processingDate", processingDate);
+    const startDate = new Date(
+      new Date(processingDate).getTime() - 24 * 60 * 60 * 1000
+    );
+    logger.info("startDate", startDate);
+    // 24 horas atrás
+    const endDate = new Date(
+      new Date(processingDate).getTime() + 24 * 60 * 60 * 1000
+    ); // 24 horas adelante
+    logger.info("endDate", endDate);
+
     // Convertir a strings ISO para la consulta (compatible con el tipo string del interface)
     const startDateISO = startDate.toISOString();
     const endDateISO = endDate.toISOString();
@@ -2726,8 +3037,8 @@ export async function checkExistingMessageText(messageText: string, entityId: st
       entityId: entityId,
       processingTimestamp: {
         $gte: startDateISO,
-        $lte: endDateISO
-      }
+        $lte: endDateISO,
+      },
     });
     logger.info("existingAction", existingAction);
 
@@ -2738,9 +3049,9 @@ export async function checkExistingMessageText(messageText: string, entityId: st
       processingTimestamp,
       dateRange: {
         start: startDate.toISOString(),
-        end: endDate.toISOString()
+        end: endDate.toISOString(),
       },
-      exists: existingAction !== null
+      exists: existingAction !== null,
     });
 
     return existingAction !== null;
@@ -2754,4 +3065,3 @@ export async function checkExistingMessageText(messageText: string, entityId: st
  * Verificar si ya existe una decisión procesada con un processingTimestamp específico
  * dentro de un rango de tiempo (30 minutos antes y 3 horas después)
  */
-
