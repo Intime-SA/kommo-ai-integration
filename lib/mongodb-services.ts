@@ -667,6 +667,87 @@ export class KommoDatabaseService {
     } as TokenVisitDocument));
   }
 
+  // Servicio para obtener estadísticas de reportes desde sendMeta
+  async getReports(campaignId?: string, startDate?: string, endDate?: string, eventName?: string, eventSourceUrl?: string): Promise<{
+    totalEvents: number;
+    eventTypes: string[];
+    event1Count: number;
+    event2Count: number;
+  }> {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.sendMeta || ""
+    );
+
+    // Calcular fecha límite (últimas 24 horas)
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
+    // Construir filtros
+    const filters: any = {
+      timestamp: { $gte: twentyFourHoursAgo },
+      success: true // Solo registros exitosos
+    };
+
+    // Agregar filtros opcionales
+    if (campaignId) {
+      filters.campaignId = campaignId;
+    }
+
+    if (startDate || endDate) {
+      const dateFilter: any = {};
+      if (startDate) {
+        dateFilter.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        dateFilter.$lte = new Date(endDate);
+      }
+      filters.timestamp = { ...filters.timestamp, ...dateFilter };
+    }
+
+    if (eventName) {
+      filters["conversionData.data.event_name"] = eventName;
+    }
+
+    if (eventSourceUrl) {
+      filters["conversionData.data.event_source_url"] = eventSourceUrl;
+    }
+
+    // Obtener todos los documentos que coinciden con los filtros
+    const documents = await collection.find(filters).toArray();
+
+    // Procesar los datos para calcular estadísticas
+    let totalEvents = 0;
+    const eventCounts: { [key: string]: number } = {};
+    const eventTypes: Set<string> = new Set();
+
+    documents.forEach(doc => {
+      if (doc.conversionData && Array.isArray(doc.conversionData)) {
+        doc.conversionData.forEach((conversion: any) => {
+          if (conversion.data && Array.isArray(conversion.data)) {
+            conversion.data.forEach((event: any) => {
+              if (event.event_name) {
+                totalEvents++;
+                eventTypes.add(event.event_name);
+                eventCounts[event.event_name] = (eventCounts[event.event_name] || 0) + 1;
+              }
+            });
+          }
+        });
+      }
+    });
+
+    // Obtener conteos específicos para event1 y event2 desde META_CONFIG
+    const event1Count = eventCounts[META_CONFIG.event1] || 0;
+    const event2Count = eventCounts[META_CONFIG.event2] || 0;
+
+    return {
+      totalEvents,
+      eventTypes: Array.from(eventTypes),
+      event1Count,
+      event2Count,
+    };
+  }
+
   // Servicio para obtener contexto histórico de un contacto (últimas 24 horas)
   async getContactContext(contactId: string): Promise<ContactContext> {
     const client = await this.getClient();
@@ -2130,6 +2211,15 @@ export const findTokenVisit = (token: string) =>
 
 export const getLastTokenVisits = (limit?: number) =>
   kommoDatabaseService.getLastTokenVisits(limit);
+
+export const getReports = (
+  campaignId?: string,
+  startDate?: string,
+  endDate?: string,
+  eventName?: string,
+  eventSourceUrl?: string
+) =>
+  kommoDatabaseService.getReports(campaignId, startDate, endDate, eventName, eventSourceUrl);
 
 export const isMessageAlreadyProcessed = (
   talkId: string,
