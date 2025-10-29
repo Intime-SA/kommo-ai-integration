@@ -560,7 +560,7 @@ export class KommoDatabaseService {
 
     const settings = await this.getAllSettings();
 
-    // Seleccionar número de redireccionamiento de forma rotativa
+    // Seleccionar número de redireccionamiento basado en uso reciente
     let redirectNumber: { name: string; phone: string } | undefined;
 
     if (
@@ -570,16 +570,43 @@ export class KommoDatabaseService {
     ) {
       const availableNumbers = settings[0].numbers;
 
-      // Algoritmo simple de round-robin basado en minutos del timestamp actual
-      // Esto distribuye las redirecciones entre los números disponibles
-      const now = new Date();
-      const currentMinutes = now.getMinutes();
-      const selectedIndex = currentMinutes % availableNumbers.length;
+      // Obtener los últimos tokens visit para ver qué números se usaron recientemente
+      const lastTokens = await this.getLastTokenVisits(availableNumbers.length);
 
-      redirectNumber = availableNumbers[selectedIndex];
-      console.log(
-        `🔄 Número seleccionado para redireccionamiento: ${redirectNumber.name} (${redirectNumber.phone})`
+      // Crear un mapa de números usados recientemente (phone -> último uso)
+      const recentlyUsedNumbers = new Map<string, string>();
+      lastTokens.forEach(token => {
+        if (token.redirectNumber) {
+          recentlyUsedNumbers.set(token.redirectNumber.phone, token.createdAt);
+        }
+      });
+
+      // Encontrar números que no se han usado recientemente
+      const unusedNumbers = availableNumbers.filter(
+        num => !recentlyUsedNumbers.has(num.phone)
       );
+
+      if (unusedNumbers.length > 0) {
+        // Si hay números no usados recientemente, seleccionar el primero
+        redirectNumber = unusedNumbers[0];
+        console.log(
+          `🔄 Número seleccionado (no usado recientemente): ${redirectNumber.name} (${redirectNumber.phone})`
+        );
+      } else {
+        // Si todos los números se han usado recientemente, seleccionar el menos usado
+        // Ordenar por fecha de último uso (más antiguo primero)
+        const sortedByLastUse = availableNumbers
+          .map(num => ({
+            number: num,
+            lastUsed: recentlyUsedNumbers.get(num.phone) || '1970-01-01T00:00:00.000Z'
+          }))
+          .sort((a, b) => new Date(a.lastUsed).getTime() - new Date(b.lastUsed).getTime());
+
+        redirectNumber = sortedByLastUse[0].number;
+        console.log(
+          `🔄 Número seleccionado (menos usado recientemente): ${redirectNumber.name} (${redirectNumber.phone}) - último uso: ${sortedByLastUse[0].lastUsed}`
+        );
+      }
     } else {
       console.log(
         "⚠️ No hay números disponibles en settings para redireccionamiento"
@@ -619,6 +646,25 @@ export class KommoDatabaseService {
           message: result.message,
         } as TokenVisitDocument)
       : null;
+  }
+
+  // Servicio para obtener los últimos tokens visit con números de redirección
+  async getLastTokenVisits(limit: number = 10): Promise<TokenVisitDocument[]> {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.tokenVisit || ""
+    );
+
+    const results = await collection
+      .find({ redirectNumber: { $exists: true } })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .toArray();
+
+    return results.map(result => ({
+      ...result,
+      _id: result._id.toString(),
+      message: result.message,
+    } as TokenVisitDocument));
   }
 
   // Servicio para obtener contexto histórico de un contacto (últimas 24 horas)
@@ -2081,6 +2127,9 @@ export const createTokenVisit = (
 
 export const findTokenVisit = (token: string) =>
   kommoDatabaseService.findTokenVisit(token);
+
+export const getLastTokenVisits = (limit?: number) =>
+  kommoDatabaseService.getLastTokenVisits(limit);
 
 export const isMessageAlreadyProcessed = (
   talkId: string,
