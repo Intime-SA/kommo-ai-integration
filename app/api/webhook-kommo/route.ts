@@ -495,7 +495,8 @@ export async function POST(request: NextRequest) {
                   [conversionData],
                   message,
                   extractedCode,
-                  [conversionResult]
+                  [conversionResult],
+                  tokenVisit.campaignId
                 );
 
                 if (saveResult.success) {
