@@ -625,6 +625,7 @@ export async function POST(request: NextRequest) {
 
           let settings: SettingsDocument | null = null;
           try {
+            console.log('se busca desde settings:')
             settings = await getSettingsById(
               KOMMO_CONFIG.pipelines[0].settings.id || ""
             );

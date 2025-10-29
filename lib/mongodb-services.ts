@@ -1979,6 +1979,7 @@ export class KommoDatabaseService {
     try {
       const collection = await this.getCollection("settings");
       console.log(`📁 Colección obtenida: settings`);
+      console.log(`🔍 [MongoDB] Buscando en colección 'settings' con ID: ${id}`);
 
       const setting = await collection.findOne({ _id: new ObjectId(id) });
       console.log(`📊 Documento encontrado:`, setting ? "Sí" : "No");
