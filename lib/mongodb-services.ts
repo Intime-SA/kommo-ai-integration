@@ -163,20 +163,27 @@ export class KommoDatabaseService {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.requestImages || ""
     );
-    console.log(`🔍 Buscando solicitud de pago PENDING más reciente para leadId: ${leadId}`);
-    const paymentRequest = (await collection.findOne({
-      leadId,
-      status: "pending"
-    }, {
-      sort: { createdAt: -1 }
-    })) as PaymentRequestDocument | null;
+    console.log(
+      `🔍 Buscando solicitud de pago PENDING más reciente para leadId: ${leadId}`
+    );
+    const paymentRequest = (await collection.findOne(
+      {
+        leadId,
+        status: "pending",
+      },
+      {
+        sort: { createdAt: -1 },
+      }
+    )) as PaymentRequestDocument | null;
 
     if (paymentRequest) {
       console.log(
         `✅ Encontrada solicitud de pago PENDING con attachment: ${paymentRequest.attachment}`
       );
     } else {
-      console.log(`❌ No se encontró solicitud de pago PENDING para leadId: ${leadId}`);
+      console.log(
+        `❌ No se encontró solicitud de pago PENDING para leadId: ${leadId}`
+      );
     }
 
     return paymentRequest;
@@ -200,24 +207,37 @@ export class KommoDatabaseService {
       );
 
       if (result.matchedCount > 0) {
-        console.log(`✅ Solicitud de pago actualizada exitosamente para leadId: ${leadId}`);
+        console.log(
+          `✅ Solicitud de pago actualizada exitosamente para leadId: ${leadId}`
+        );
         return true;
       } else {
-        console.log(`❌ No se encontró solicitud de pago para actualizar leadId: ${leadId}`);
+        console.log(
+          `❌ No se encontró solicitud de pago para actualizar leadId: ${leadId}`
+        );
         return false;
       }
     } catch (error) {
-      console.error(`❌ Error actualizando solicitud de pago para leadId: ${leadId}`, error);
+      console.error(
+        `❌ Error actualizando solicitud de pago para leadId: ${leadId}`,
+        error
+      );
       throw error;
     }
   }
 
-  async updatePaymentById(id: string, updateData: Partial<PaymentRequestDocument>): Promise<boolean> {
+  async updatePaymentById(
+    id: string,
+    updateData: Partial<PaymentRequestDocument>
+  ): Promise<boolean> {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.requestImages || ""
     );
     console.log(`🔄 Actualizando solicitud de pago por id: ${id}`);
-    const result = await collection.updateOne({ _id: new ObjectId(id) }, { $set: updateData });
+    const result = await collection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
     return result.matchedCount > 0;
   }
 
@@ -553,6 +573,7 @@ export class KommoDatabaseService {
     campaignId?: string;
     token: string;
     lead: any;
+    eventSourceUrl: string;
   }): Promise<TokenVisitDocument> {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.tokenVisit || ""
@@ -575,7 +596,7 @@ export class KommoDatabaseService {
 
       // Crear un mapa de números usados recientemente (phone -> último uso)
       const recentlyUsedNumbers = new Map<string, string>();
-      lastTokens.forEach(token => {
+      lastTokens.forEach((token) => {
         if (token.redirectNumber) {
           recentlyUsedNumbers.set(token.redirectNumber.phone, token.createdAt);
         }
@@ -583,7 +604,7 @@ export class KommoDatabaseService {
 
       // Encontrar números que no se han usado recientemente
       const unusedNumbers = availableNumbers.filter(
-        num => !recentlyUsedNumbers.has(num.phone)
+        (num) => !recentlyUsedNumbers.has(num.phone)
       );
 
       if (unusedNumbers.length > 0) {
@@ -596,11 +617,15 @@ export class KommoDatabaseService {
         // Si todos los números se han usado recientemente, seleccionar el menos usado
         // Ordenar por fecha de último uso (más antiguo primero)
         const sortedByLastUse = availableNumbers
-          .map(num => ({
+          .map((num) => ({
             number: num,
-            lastUsed: recentlyUsedNumbers.get(num.phone) || '1970-01-01T00:00:00.000Z'
+            lastUsed:
+              recentlyUsedNumbers.get(num.phone) || "1970-01-01T00:00:00.000Z",
           }))
-          .sort((a, b) => new Date(a.lastUsed).getTime() - new Date(b.lastUsed).getTime());
+          .sort(
+            (a, b) =>
+              new Date(a.lastUsed).getTime() - new Date(b.lastUsed).getTime()
+          );
 
         redirectNumber = sortedByLastUse[0].number;
         console.log(
@@ -617,6 +642,7 @@ export class KommoDatabaseService {
     const tokenVisitDocument: TokenVisitDocument = {
       token: data.token,
       lead: data.lead,
+      eventSourceUrl: data.eventSourceUrl,
       createdAt: getCurrentArgentinaISO(),
       redirectNumber: redirectNumber,
       message: settings[0].message,
@@ -660,15 +686,24 @@ export class KommoDatabaseService {
       .limit(limit)
       .toArray();
 
-    return results.map(result => ({
-      ...result,
-      _id: result._id.toString(),
-      message: result.message,
-    } as TokenVisitDocument));
+    return results.map(
+      (result) =>
+        ({
+          ...result,
+          _id: result._id.toString(),
+          message: result.message,
+        } as TokenVisitDocument)
+    );
   }
 
   // Servicio para obtener estadísticas de reportes desde sendMeta
-  async getReports(campaignId?: string, startDate?: string, endDate?: string, eventName?: string, eventSourceUrl?: string): Promise<{
+  async getReports(
+    campaignId?: string,
+    startDate?: string,
+    endDate?: string,
+    eventName?: string,
+    eventSourceUrl?: string
+  ): Promise<{
     totalEvents: number;
     eventTypes: string[];
     event1Count: number;
@@ -684,7 +719,7 @@ export class KommoDatabaseService {
 
     // Construir filtros
     const filters: any = {
-      success: true // Solo registros exitosos
+      success: true, // Solo registros exitosos
     };
 
     // Manejar filtros de fecha
@@ -739,7 +774,7 @@ export class KommoDatabaseService {
     const eventCounts: { [key: string]: number } = {};
     const eventTypes: Set<string> = new Set();
 
-    documents.forEach(doc => {
+    documents.forEach((doc) => {
       if (doc.conversionData && Array.isArray(doc.conversionData)) {
         doc.conversionData.forEach((conversion: any) => {
           if (conversion && conversion.data && Array.isArray(conversion.data)) {
@@ -747,7 +782,8 @@ export class KommoDatabaseService {
               if (event && event.event_name) {
                 totalEvents++;
                 eventTypes.add(event.event_name);
-                eventCounts[event.event_name] = (eventCounts[event.event_name] || 0) + 1;
+                eventCounts[event.event_name] =
+                  (eventCounts[event.event_name] || 0) + 1;
               }
             });
           }
@@ -767,19 +803,222 @@ export class KommoDatabaseService {
     };
   }
 
+  // Servicio para obtener o crear resumen diario de meta events
+  async getOrCreateDailyMeta(dateString: string): Promise<{
+    timestamp: string;
+    data: {
+      totalEvents: number;
+      eventTypes: string[];
+      [key: string]: any;
+    };
+    action: "created" | "updated";
+  }> {
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.dailyMeta || ""
+    );
+
+    // Crear fecha exacta sin modificaciones de zona horaria
+    const targetDate = new Date(dateString);
+    if (isNaN(targetDate.getTime())) {
+      throw new Error(`Fecha inválida: ${dateString}`);
+    }
+
+    // Crear fechas para el inicio y fin del día SIN modificar zona horaria
+    // Usar la fecha tal cual viene, solo ajustar horas del mismo día
+    const year = targetDate.getUTCFullYear();
+    const month = targetDate.getUTCMonth();
+    const day = targetDate.getUTCDate();
+
+    const startOfDay = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+    const endOfDay = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
+
+    console.log("startOfDay", startOfDay);
+    console.log("endOfDay", endOfDay);
+
+    // Obtener datos resumidos del día usando la misma lógica de agregación que la query del usuario
+    const sendMetaCollection = await this.getCollection(
+      MONGO_CONFIG.collection.sendMeta || ""
+    );
+
+    // DEBUG: Obtener todos los registros que se van a sumarizar
+    const debugDocuments = await sendMetaCollection
+      .find({
+        success: true,
+        timestamp: {
+          $gte: startOfDay,
+          $lt: endOfDay,
+        },
+      })
+      .toArray();
+
+    console.log(
+      `📊 DEBUG - Registros encontrados para sumarizar (${debugDocuments.length}):`,
+      debugDocuments
+    );
+
+    const pipeline = [
+      {
+        $match: {
+          success: true,
+          timestamp: {
+            $gte: startOfDay,
+            $lt: endOfDay,
+          },
+        },
+      },
+      {
+        $unwind: "$conversionData",
+      },
+      {
+        $unwind: "$conversionData.data",
+      },
+      {
+        $project: {
+          event_name: "$conversionData.data.event_name",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalEvents: {
+            $sum: 1,
+          },
+          eventTypes: {
+            $addToSet: "$event_name",
+          },
+          eventCounts: {
+            $push: "$event_name",
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalEvents: 1,
+          eventTypes: 1,
+          eventCounts: {
+            $arrayToObject: {
+              $map: {
+                input: "$eventTypes",
+                as: "type",
+                in: {
+                  k: "$$type",
+                  v: {
+                    $size: {
+                      $filter: {
+                        input: "$eventCounts",
+                        as: "e",
+                        cond: {
+                          $eq: ["$$e", "$$type"],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          totalEvents: 1,
+          eventTypes: 1,
+          eventCounts: {
+            $mergeObjects: ["$eventCounts", {}],
+          },
+        },
+      },
+    ];
+
+    const aggregationResult = await sendMetaCollection
+      .aggregate(pipeline)
+      .toArray();
+    const dailyData =
+      aggregationResult.length > 0
+        ? aggregationResult[0]
+        : {
+            totalEvents: 0,
+            eventTypes: [],
+            eventCounts: {},
+          };
+
+    // Crear el objeto de datos para guardar
+    const dataToSave = {
+      totalEvents: dailyData.totalEvents,
+      eventTypes: dailyData.eventTypes,
+      [META_CONFIG.event1]: dailyData.eventCounts[META_CONFIG.event1] || 0,
+      [META_CONFIG.event2]: dailyData.eventCounts[META_CONFIG.event2] || 0,
+    };
+
+    // Buscar si ya existe un registro para esta fecha exacta
+    const existingRecord = await collection.findOne({
+      timestamp: targetDate,
+    });
+
+    if (existingRecord) {
+      // Actualizar registro existente - solo actualizar data y updatedAt
+      await collection.updateOne(
+        { _id: existingRecord._id },
+        {
+          $set: {
+            data: dataToSave,
+            updatedAt: getCurrentArgentinaISO(),
+          },
+        }
+      );
+
+      console.log(
+        `📅 Registro ${
+          MONGO_CONFIG.collection.dailyMeta
+        } actualizado para fecha: ${targetDate.toISOString().split("T")[0]}`
+      );
+
+      return {
+        timestamp: targetDate.toISOString(),
+        data: dataToSave,
+        action: "updated",
+      };
+    } else {
+      // Crear nuevo registro
+      const newRecord = {
+        timestamp: targetDate,
+        data: dataToSave,
+        createdAt: getCurrentArgentinaISO(),
+        updatedAt: getCurrentArgentinaISO(),
+      };
+
+      await collection.insertOne(newRecord);
+
+      console.log(
+        `📅 Nuevo registro daily_meta creado para fecha: ${
+          targetDate.toISOString().split("T")[0]
+        }`
+      );
+
+      return {
+        timestamp: targetDate.toISOString(),
+        data: dataToSave,
+        action: "created",
+      };
+    }
+  }
+
   // Servicio para obtener datos de gráficos desde daily_meta
   async getReportsStats(
     campaignId?: string,
     startDate?: string,
     endDate?: string,
-    eventName?: string,
+    eventName?: string
   ): Promise<{
     all: Array<{ x: string; y: number }>;
     event1: Array<{ x: string; y: number }>;
     event2: Array<{ x: string; y: number }>;
   }> {
-    const collection = await this.getCollection('daily_meta');
-  
+    const collection = await this.getCollection(
+      MONGO_CONFIG.collection.dailyMeta || ""
+    );
+
     // === 1️⃣ Filtros base ===
     const filters: any = {};
     if (startDate || endDate) {
@@ -787,41 +1026,40 @@ export class KommoDatabaseService {
       if (startDate) filters.timestamp.$gte = new Date(startDate);
       if (endDate) filters.timestamp.$lte = new Date(endDate);
     }
-  
+
     // === 2️⃣ Obtenemos los documentos ya resumidos ===
     const docs = await collection
       .find(filters)
       .sort({ timestamp: 1 })
       .toArray();
-  
+
     // === 3️⃣ Mapeamos la data a formato gráfico ===
     const all: Array<{ x: string; y: number }> = [];
     const event1: Array<{ x: string; y: number }> = [];
     const event2: Array<{ x: string; y: number }> = [];
-  
+
     docs.forEach((doc) => {
-      const date = new Date(doc.timestamp).toISOString().split('T')[0]; // "YYYY-MM-DD"
+      const date = new Date(doc.timestamp).toISOString().split("T")[0]; // "YYYY-MM-DD"
       const data = doc.data || {};
-  
+
       all.push({
         x: date,
         y: data.totalEvents || 0,
       });
-  
+
       event1.push({
         x: date,
         y: data.ConversacionCRM1 || 0, // tu evento principal
       });
-  
+
       event2.push({
         x: date,
         y: data.CargoCRM1 || 0, // tu segundo evento
       });
     });
-  
+
     return { all, event1, event2 };
   }
-  
 
   // Servicio para obtener contexto histórico de un contacto (últimas 24 horas)
   async getContactContext(contactId: string): Promise<ContactContext> {
@@ -977,10 +1215,6 @@ export class KommoDatabaseService {
   }
 
   // ===== MÉTODOS PARA CONSULTAR LOGS =====
-
-  /**
-   * Obtiene logs de mensajes recibidos con filtros y paginación
-   */
   async getReceivedMessagesLogs(
     params: LogsQueryParams
   ): Promise<{ logs: ReceivedMessageLog[]; total: number }> {
@@ -1123,9 +1357,7 @@ export class KommoDatabaseService {
     };
   }
 
-  /**
-   * Obtiene logs de cambios de status
-   */
+
   async getChangeStatusLogs(
     params: LogsQueryParams
   ): Promise<{ logs: ChangeStatusLog[]; total: number }> {
@@ -1969,20 +2201,13 @@ export class KommoDatabaseService {
   }
 
   // ===== FUNCIONES HELPER PARA STATUS =====
-
-  /**
-   * Validar si un string es un color hex válido
-   */
   private isValidHexColor(color: string): boolean {
     const hexRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
     return hexRegex.test(color);
   }
 
-  // ===== MÉTODOS PARA STATUS =====
 
-  /**
-   * Crear un nuevo documento de status
-   */
+  // ===== MÉTODOS PARA STATUS =====
   async createStatus(
     data: Omit<StatusDocument, "_id" | "createdAt" | "updatedAt" | "kommo_id">
   ): Promise<StatusDocument> {
@@ -2020,9 +2245,7 @@ export class KommoDatabaseService {
     } as StatusDocument;
   }
 
-  /**
-   * Obtener todos los documentos de status
-   */
+
   async getAllStatus(): Promise<StatusDocument[]> {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.status || ""
@@ -2041,9 +2264,7 @@ export class KommoDatabaseService {
     })) as StatusDocument[];
   }
 
-  /**
-   * Obtener un documento de status por ID
-   */
+
   async getStatusById(id: string): Promise<StatusDocument | null> {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.status || ""
@@ -2064,9 +2285,7 @@ export class KommoDatabaseService {
     } as StatusDocument;
   }
 
-  /**
-   * Obtener un documento de status por statusId
-   */
+
   async getStatusByStatusId(statusId: string): Promise<StatusDocument | null> {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.status || ""
@@ -2087,9 +2306,7 @@ export class KommoDatabaseService {
     } as StatusDocument;
   }
 
-  /**
-   * Actualizar un documento de status por ID
-   */
+
   async updateStatusById(
     id: string,
     updateData: Partial<Omit<StatusDocument, "_id" | "createdAt">>
@@ -2134,9 +2351,7 @@ export class KommoDatabaseService {
     }
   }
 
-  /**
-   * Eliminar un documento de status por ID
-   */
+
   async deleteStatusById(id: string): Promise<boolean> {
     const collection = await this.getCollection("status");
 
@@ -2148,11 +2363,9 @@ export class KommoDatabaseService {
     }
   }
 
+
   // ===== MÉTODOS PARA SETTINGS =====
 
-  /**
-   * Obtener todos los documentos de settings
-   */
   async getAllSettings(): Promise<SettingsDocument[]> {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.settings || ""
@@ -2172,16 +2385,15 @@ export class KommoDatabaseService {
     })) as SettingsDocument[];
   }
 
-  /**
-   * Obtener un documento de settings por ID
-   */
   async getSettingsById(id: string): Promise<SettingsDocument | null> {
     console.log(`🔍 [MongoDB] Buscando en colección 'settings' con ID: ${id}`);
 
     try {
       const collection = await this.getCollection("settings");
       console.log(`📁 Colección obtenida: settings`);
-      console.log(`🔍 [MongoDB] Buscando en colección 'settings' con ID: ${id}`);
+      console.log(
+        `🔍 [MongoDB] Buscando en colección 'settings' con ID: ${id}`
+      );
 
       const setting = await collection.findOne({ _id: new ObjectId(id) });
       console.log(`📊 Documento encontrado:`, setting ? "Sí" : "No");
@@ -2204,9 +2416,6 @@ export class KommoDatabaseService {
     }
   }
 
-  /**
-   * Actualizar un documento de settings por ID
-   */
   async updateSettingsById(
     id: string,
     updateData: Partial<Omit<SettingsDocument, "_id">>
@@ -2294,15 +2503,29 @@ export const getReports = (
   eventName?: string,
   eventSourceUrl?: string
 ) =>
-  kommoDatabaseService.getReports(campaignId, startDate, endDate, eventName, eventSourceUrl);
+  kommoDatabaseService.getReports(
+    campaignId,
+    startDate,
+    endDate,
+    eventName,
+    eventSourceUrl
+  );
 
 export const getReportsStats = (
   campaignId?: string,
   startDate?: string,
   endDate?: string,
-  eventName?: string,
+  eventName?: string
 ) =>
-  kommoDatabaseService.getReportsStats(campaignId, startDate, endDate, eventName);
+  kommoDatabaseService.getReportsStats(
+    campaignId,
+    startDate,
+    endDate,
+    eventName
+  );
+
+export const getOrCreateDailyMeta = (dateString: string) =>
+  kommoDatabaseService.getOrCreateDailyMeta(dateString);
 
 export const isMessageAlreadyProcessed = (
   talkId: string,
@@ -2444,7 +2667,6 @@ export async function sendConversionToMeta(
     };
   }
 }
-
 
 // Función para guardar envío a Meta en colección send_meta
 export async function saveSendMetaRecord(

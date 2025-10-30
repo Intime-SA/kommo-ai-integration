@@ -55,6 +55,7 @@ export const MONGO_CONFIG = {
   collection: {
     leads: process.env.MONGODB_COLLECTION_LEADS,
     sendMeta: process.env.MONGODB_COLLECTION_SEND_META,
+    dailyMeta: process.env.MONGODB_COLLECTION_DAILY_META,
     users: process.env.MONGODB_COLLECTION_USERS,
     tasks: process.env.MONGODB_COLLECTION_TASKS,
     messages: process.env.MONGODB_COLLECTION_MESSAGES,

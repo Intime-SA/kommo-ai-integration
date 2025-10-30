@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Extraer los datos del payload
-    const { lead, campaignId } = body;
+    const { lead, campaignId, eventSourceUrl } = body;
 
     // Validar que el lead esté presente
     if (!lead) {
@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       campaignId: campaignId || "",
       token,
       lead,
+      eventSourceUrl,
     });
 
     console.log("Token visit document:", tokenVisitDocument);

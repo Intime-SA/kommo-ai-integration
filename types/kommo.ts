@@ -610,6 +610,7 @@ export interface TokenVisitDocument {
   campaignId: string;
   lead: any; // El objeto lead que viene del payload
   createdAt: string; // ISO string en horario Argentina
+  eventSourceUrl: string;
   redirectNumber?: {
     name: string;
     phone: string;

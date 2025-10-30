@@ -196,6 +196,7 @@ export async function POST(request: NextRequest) {
 
                 const conversionResult = await sendConversionToMeta(
                   {
+                    eventSourceUrl: tokenVisit.eventSourceUrl,
                     ...tokenVisit.lead,
                     extractedCode: extractedCode,
                     eventName: META_CONFIG.event1,
@@ -454,6 +455,7 @@ export async function POST(request: NextRequest) {
                 }
                 const conversionResult = await sendConversionToMeta(
                   {
+                    eventSourceUrl: tokenVisit.eventSourceUrl,
                     ...tokenVisit.lead,
                     extractedCode: extractedCode,
                     eventName: META_CONFIG.event1,
