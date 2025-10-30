@@ -346,7 +346,7 @@ export function generateUsername(
   const randomNum = Math.floor(Math.random() * 10).toString();
 
   // Combine: 3 letters from name + 3 chars from contactId + 1 random number + 'g' = exactly 8 characters
-  const username = `${firstThreeLetters}${firstThreeContactId}${randomNum}g`;
+  const username = `${firstThreeLetters}${firstThreeContactId}${randomNum}gb`;
 
   return username;
 }
