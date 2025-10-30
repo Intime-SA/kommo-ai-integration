@@ -19,14 +19,14 @@ const allowedOrigins = [
   'https://redirect-hernan-2.vercel.app',
   'https://redirect-tee-1.vercel.app',
 
-/*   'http://localhost:3000',  // Frontend típico
+  'http://localhost:3000',  // Frontend típico
   'http://127.0.0.1:3000', // Frontend alternativo
   'http://localhost:3001', // Si el backend está en 3001
   'http://127.0.0.1:3001',
   'http://localhost:3002', // Si el backend está en 3002
   'http://127.0.0.1:3002',
   'http://localhost:4000', // Otro puerto común
-  'http://localhost:8080', // Otro puerto común */
+  'http://localhost:8080', // Otro puerto común
 ];
 
 export function middleware(request: NextRequest) {

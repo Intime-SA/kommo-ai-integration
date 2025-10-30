@@ -684,24 +684,43 @@ export class KommoDatabaseService {
 
     // Construir filtros
     const filters: any = {
-      timestamp: { $gte: twentyFourHoursAgo },
       success: true // Solo registros exitosos
     };
+
+    // Manejar filtros de fecha
+    if (startDate || endDate) {
+      const dateFilter: any = {};
+      if (startDate) {
+        const startDateObj = new Date(startDate);
+        if (!isNaN(startDateObj.getTime())) {
+          dateFilter.$gte = startDateObj;
+        } else {
+          console.warn(`⚠️ Fecha de inicio inválida: ${startDate}`);
+        }
+      }
+      if (endDate) {
+        const endDateObj = new Date(endDate);
+        if (!isNaN(endDateObj.getTime())) {
+          dateFilter.$lte = endDateObj;
+        } else {
+          console.warn(`⚠️ Fecha de fin inválida: ${endDate}`);
+        }
+      }
+      // Solo aplicar filtro si al menos una fecha es válida
+      if (Object.keys(dateFilter).length > 0) {
+        filters.timestamp = dateFilter;
+      } else {
+        // Si las fechas son inválidas, usar últimas 24 horas
+        filters.timestamp = { $gte: twentyFourHoursAgo };
+      }
+    } else {
+      // Por defecto, últimas 24 horas si no se especifican fechas
+      filters.timestamp = { $gte: twentyFourHoursAgo };
+    }
 
     // Agregar filtros opcionales
     if (campaignId) {
       filters.campaignId = campaignId;
-    }
-
-    if (startDate || endDate) {
-      const dateFilter: any = {};
-      if (startDate) {
-        dateFilter.$gte = new Date(startDate);
-      }
-      if (endDate) {
-        dateFilter.$lte = new Date(endDate);
-      }
-      filters.timestamp = { ...filters.timestamp, ...dateFilter };
     }
 
     if (eventName) {
@@ -723,9 +742,9 @@ export class KommoDatabaseService {
     documents.forEach(doc => {
       if (doc.conversionData && Array.isArray(doc.conversionData)) {
         doc.conversionData.forEach((conversion: any) => {
-          if (conversion.data && Array.isArray(conversion.data)) {
+          if (conversion && conversion.data && Array.isArray(conversion.data)) {
             conversion.data.forEach((event: any) => {
-              if (event.event_name) {
+              if (event && event.event_name) {
                 totalEvents++;
                 eventTypes.add(event.event_name);
                 eventCounts[event.event_name] = (eventCounts[event.event_name] || 0) + 1;
@@ -747,6 +766,62 @@ export class KommoDatabaseService {
       event2Count,
     };
   }
+
+  // Servicio para obtener datos de gráficos desde daily_meta
+  async getReportsStats(
+    campaignId?: string,
+    startDate?: string,
+    endDate?: string,
+    eventName?: string,
+  ): Promise<{
+    all: Array<{ x: string; y: number }>;
+    event1: Array<{ x: string; y: number }>;
+    event2: Array<{ x: string; y: number }>;
+  }> {
+    const collection = await this.getCollection('daily_meta');
+  
+    // === 1️⃣ Filtros base ===
+    const filters: any = {};
+    if (startDate || endDate) {
+      filters.timestamp = {};
+      if (startDate) filters.timestamp.$gte = new Date(startDate);
+      if (endDate) filters.timestamp.$lte = new Date(endDate);
+    }
+  
+    // === 2️⃣ Obtenemos los documentos ya resumidos ===
+    const docs = await collection
+      .find(filters)
+      .sort({ timestamp: 1 })
+      .toArray();
+  
+    // === 3️⃣ Mapeamos la data a formato gráfico ===
+    const all: Array<{ x: string; y: number }> = [];
+    const event1: Array<{ x: string; y: number }> = [];
+    const event2: Array<{ x: string; y: number }> = [];
+  
+    docs.forEach((doc) => {
+      const date = new Date(doc.timestamp).toISOString().split('T')[0]; // "YYYY-MM-DD"
+      const data = doc.data || {};
+  
+      all.push({
+        x: date,
+        y: data.totalEvents || 0,
+      });
+  
+      event1.push({
+        x: date,
+        y: data.ConversacionCRM1 || 0, // tu evento principal
+      });
+  
+      event2.push({
+        x: date,
+        y: data.CargoCRM1 || 0, // tu segundo evento
+      });
+    });
+  
+    return { all, event1, event2 };
+  }
+  
 
   // Servicio para obtener contexto histórico de un contacto (últimas 24 horas)
   async getContactContext(contactId: string): Promise<ContactContext> {
@@ -2220,6 +2295,14 @@ export const getReports = (
   eventSourceUrl?: string
 ) =>
   kommoDatabaseService.getReports(campaignId, startDate, endDate, eventName, eventSourceUrl);
+
+export const getReportsStats = (
+  campaignId?: string,
+  startDate?: string,
+  endDate?: string,
+  eventName?: string,
+) =>
+  kommoDatabaseService.getReportsStats(campaignId, startDate, endDate, eventName);
 
 export const isMessageAlreadyProcessed = (
   talkId: string,
