@@ -116,7 +116,8 @@ async function handleWebhook(request: NextRequest) {
       [null, cargoConversionData],
       messageData,
       metaData.extractedCode, // Usar el mismo código original
-      [null, conversionResult]
+      [null, conversionResult],
+      metaData.campaignId
     )
 
     if (saveResult.success) {
