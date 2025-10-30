@@ -471,8 +471,8 @@ export async function POST(request: NextRequest) {
                       event_time: Math.floor(Date.now() / 1000),
                       action_source: "website",
                       event_source_url:
-                        tokenVisit.lead.eventSourceUrl ||
-                        "https://kommo-ai-integration.vercel.app",
+                        tokenVisit.eventSourceUrl || tokenVisit.lead.eventSourceUrl ||
+                        "guba",
                       user_data: {
                         client_ip_address: tokenVisit.lead.ip
                           ? tokenVisit.lead.ip

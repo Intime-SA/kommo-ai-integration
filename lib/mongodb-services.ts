@@ -2582,8 +2582,8 @@ export async function sendConversionToMeta(
           event_time: Math.floor(Date.now() / 1000),
           action_source: "website",
           event_source_url:
-            leadData.eventSourceUrl ||
-            "https://kommo-ai-integration.vercel.app",
+            leadData.eventSourceUrl || leadData.eventSourceUrl ||
+            "guba",
           user_data: {
             client_ip_address: leadData.ip ? leadData.ip : undefined,
             client_user_agent: leadData.userAgent
