@@ -14,6 +14,7 @@ const allowedOrigins = [
   'https://guba-redirect.vercel.app', // guba redirect
   'https://guba-redirect-777.vercel.app', // guba redirect
   'https://guba-redirect-888.vercel.app', // guba redirect
+  'https://guba-redirect-999.vercel.app', // guba redirect
 
   // landings redirects token/campaigns
   'https://redirect-hernan-2.vercel.app',
