@@ -338,15 +338,18 @@ export function generateUsername(
   const cleanName = cleanedName.replace(/[^a-zA-Z]/g, "").toLowerCase();
   const firstThreeLetters = cleanName.substring(0, 3).padEnd(3, "x"); // Pad with 'x' if name is shorter than 3 chars
 
-  // Take first 3 characters of contactId as string
+  // Take first 2 characters of contactId as string
   const contactIdStr = contactId.toString();
-  const firstThreeContactId = contactIdStr.substring(0, 3).padEnd(3, "0"); // Pad with '0' if contactId is shorter than 3 chars
+  const firstTwoContactId = contactIdStr.substring(0, 2).padEnd(2, "0"); // Pad with '0' if contactId is shorter than 2 chars
 
-  // Generate 1 random number (0-9)
-  const randomNum = Math.floor(Math.random() * 10).toString();
+  // Generate 3 random numbers (0-9)
+  const randomNum1 = Math.floor(Math.random() * 10).toString();
+  const randomNum2 = Math.floor(Math.random() * 10).toString();
+  const randomNum3 = Math.floor(Math.random() * 10).toString();
+  const randomNum = `${randomNum1}${randomNum2}${randomNum3}`;
 
-  // Combine: 3 letters from name + 3 chars from contactId + 1 random number + 'g' = exactly 8 characters
-  const username = `${firstThreeLetters}${firstThreeContactId}${randomNum}gb`;
+  // Combine: 3 letters from name + 2 chars from contactId + 3 random numbers + 'gb' = exactly 10 characters
+  const username = `${firstThreeLetters}${firstTwoContactId}${randomNum}gb`;
 
   return username;
 }
