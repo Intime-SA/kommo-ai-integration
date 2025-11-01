@@ -708,49 +708,49 @@ export class KommoDatabaseService {
     eventTypes: string[];
     event1Count: number;
     event2Count: number;
+    records: any[]; // Array con todos los registros send_meta incluidos
   }> {
     const collection = await this.getCollection(
       MONGO_CONFIG.collection.sendMeta || ""
     );
-
-    // Calcular fecha límite (últimas 24 horas)
-    const twentyFourHoursAgo = new Date();
-    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
 
     // Construir filtros
     const filters: any = {
       success: true, // Solo registros exitosos
     };
 
-    // Manejar filtros de fecha
+    // Manejar filtros de fecha - el frontend envía fechas sin horas específicas
     if (startDate || endDate) {
       const dateFilter: any = {};
+
       if (startDate) {
-        const startDateObj = new Date(startDate);
-        if (!isNaN(startDateObj.getTime())) {
-          dateFilter.$gte = startDateObj;
-        } else {
-          console.warn(`⚠️ Fecha de inicio inválida: ${startDate}`);
+        try {
+          // Usar la fecha directamente como inicio del día (viene como 00:00:00)
+          dateFilter.$gte = new Date(startDate);
+          console.log('dateFiltered startDate', dateFilter);
+        } catch (error) {
+          console.warn(`⚠️ Fecha de inicio inválida: ${startDate}`, error);
         }
       }
+
       if (endDate) {
-        const endDateObj = new Date(endDate);
-        if (!isNaN(endDateObj.getTime())) {
-          dateFilter.$lte = endDateObj;
-        } else {
-          console.warn(`⚠️ Fecha de fin inválida: ${endDate}`);
+        try {
+          // Convertir la fecha al final del día (23:59:59.999) del mismo día
+          const parsedEndDate = new Date(endDate);
+          parsedEndDate.setUTCHours(23, 59, 59, 999);
+          dateFilter.$lte = parsedEndDate;
+          console.log('dateFiltered endDate', dateFilter);
+        } catch (error) {
+          console.warn(`⚠️ Fecha de fin inválida: ${endDate}`, error);
         }
       }
+
       // Solo aplicar filtro si al menos una fecha es válida
       if (Object.keys(dateFilter).length > 0) {
         filters.timestamp = dateFilter;
       } else {
-        // Si las fechas son inválidas, usar últimas 24 horas
-        filters.timestamp = { $gte: twentyFourHoursAgo };
+        console.warn('⚠️ Ninguna fecha válida proporcionada, no se aplicarán filtros de fecha');
       }
-    } else {
-      // Por defecto, últimas 24 horas si no se especifican fechas
-      filters.timestamp = { $gte: twentyFourHoursAgo };
     }
 
     // Agregar filtros opcionales
@@ -800,6 +800,7 @@ export class KommoDatabaseService {
       eventTypes: Array.from(eventTypes),
       event1Count,
       event2Count,
+      records: documents, // Array con todos los registros send_meta incluidos
     };
   }
 
